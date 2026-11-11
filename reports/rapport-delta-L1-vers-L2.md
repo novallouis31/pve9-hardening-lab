@@ -2,7 +2,7 @@
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261111-083425`
 - **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261111-084429`
-- **Genere le** : 2026-11-11 08:51:08
+- **Genere le** : 2026-11-11 08:55:25
 
 ## Synthese
 
@@ -15,20 +15,15 @@
 
 ## Ameliorations
 
-| Controle |
-|---|
-| Avant |
-| Apres |
-| Detail |
+| Controle | Avant | Apres | Detail |
+|---|---|---|---|
 | `OS.AUDITD.PVE` | FAIL | PASS | regles d'audit sur /etc/pve |
 | `OS.ROOTKIT.TOOL` | FAIL | PASS | outil de detection de rootkit installe |
 
 ## Controles en echec restants (apres)
 
-| Controle |
-|---|
-| Statut |
-| Detail |
+| Controle | Statut | Detail |
+|---|---|---|
 | `OS.MOUNT._var_tmp` | FAIL | /var/tmp opts=rw,relatime,errors=remount-ro (manquant: nodev nosuid noexec ) |
 | `OS.SSHD.ALLOWLIST` | FAIL | aucune restriction AllowUsers/AllowGroups |
 | `OS.PAM.FAILLOCK` | FAIL | pam_faillock absent de /etc/pam.d/common-auth |
@@ -44,13 +39,8 @@
 
 ## Recapitulatif complet - tous les controles
 
-| # |
-|---|
-| Controle |
-| Avant |
-| Apres |
-| Evolution |
-| Detail (apres) |
+| # | Controle | Avant | Apres | Evolution | Detail (apres) |
+|---|---|---|---|---|---|
 | 1 | `OS.APPARMOR.ACTIVE` | PASS | PASS | inchange | apparmor actif |
 | 2 | `OS.APPARMOR.ENFORCE` | FAIL | FAIL | inchange | complain=2 enforce=2 |
 | 3 | `OS.AUDITD.ACTIVE` | PASS | PASS | inchange | auditd actif |

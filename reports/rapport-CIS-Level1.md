@@ -2,7 +2,7 @@
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261111-083123`
 - **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261111-083425`
-- **Genere le** : 2026-11-11 08:51:02
+- **Genere le** : 2026-11-11 08:55:11
 
 ## Synthese
 
@@ -15,11 +15,8 @@
 
 ## Ameliorations
 
-| Controle |
-|---|
-| Avant |
-| Apres |
-| Detail |
+| Controle | Avant | Apres | Detail |
+|---|---|---|---|
 | `OS.MOUNT._dev_shm` | FAIL | PASS | /dev/shm opts=rw,nosuid,nodev,noexec,inode64 |
 | `OS.CRON.CRONTAB` | FAIL | PASS | /etc/crontab en 600 |
 | `OS.CRON.DIR.cron.daily` | FAIL | PASS | /etc/cron.daily en 700 |
@@ -42,10 +39,8 @@
 
 ## Controles en echec restants (apres)
 
-| Controle |
-|---|
-| Statut |
-| Detail |
+| Controle | Statut | Detail |
+|---|---|---|
 | `OS.MOUNT._var_tmp` | FAIL | /var/tmp opts=rw,relatime,errors=remount-ro (manquant: nodev nosuid noexec ) |
 | `OS.AUDITD.PVE` | FAIL | aucune regle d'audit sur /etc/pve |
 | `OS.SSHD.ALLOWLIST` | FAIL | aucune restriction AllowUsers/AllowGroups |
@@ -62,13 +57,8 @@
 
 ## Recapitulatif complet - tous les controles
 
-| # |
-|---|
-| Controle |
-| Avant |
-| Apres |
-| Evolution |
-| Detail (apres) |
+| # | Controle | Avant | Apres | Evolution | Detail (apres) |
+|---|---|---|---|---|---|
 | 1 | `OS.APPARMOR.ACTIVE` | PASS | PASS | inchange | apparmor actif |
 | 2 | `OS.APPARMOR.ENFORCE` | FAIL | FAIL | inchange | complain=2 enforce=2 |
 | 3 | `OS.AUDITD.ACTIVE` | FAIL | PASS | amelioration | auditd actif |

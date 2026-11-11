@@ -116,12 +116,24 @@ $meta = [ordered]@{
 # --------------------------------------------------------------- tableaux MD
 $mdTables = [ordered]@{}
 if ($regressions.Count) {
-    $mdTables['Regressions'] = @(@('Controle','Avant','Apres','Detail')) + @($regressions | ForEach-Object { ,@("``$($_.Id)``", $_.Before.Status, $_.After.Status, $_.After.Detail) })
+    $t = [System.Collections.ArrayList]@()
+    [void]$t.Add(@('Controle','Avant','Apres','Detail'))
+    foreach ($r in $regressions) { [void]$t.Add(@("``$($r.Id)``", $r.Before.Status, $r.After.Status, $r.After.Detail)) }
+    $mdTables['Regressions'] = $t
 }
 if ($improvements.Count) {
-    $mdTables['Ameliorations'] = @(@('Controle','Avant','Apres','Detail')) + @($improvements | ForEach-Object { ,@("``$($_.Id)``", $_.Before.Status, $_.After.Status, $_.After.Detail) })
+    $t = [System.Collections.ArrayList]@()
+    [void]$t.Add(@('Controle','Avant','Apres','Detail'))
+    foreach ($r in $improvements) { [void]$t.Add(@("``$($r.Id)``", $r.Before.Status, $r.After.Status, $r.After.Detail)) }
+    $mdTables['Ameliorations'] = $t
 }
-$mdTables['Controles en echec restants (apres)'] = @(@('Controle','Statut','Detail')) + @($afterChecks.Values | Where-Object { $_.Status -eq 'FAIL' } | ForEach-Object { ,@("``$($_.Id)``", $_.Status, $_.Detail) })
+$failedAfter = $afterChecks.Values | Where-Object { $_.Status -eq 'FAIL' }
+if ($failedAfter) {
+    $t = [System.Collections.ArrayList]@()
+    [void]$t.Add(@('Controle','Statut','Detail'))
+    foreach ($r in $failedAfter) { [void]$t.Add(@("``$($r.Id)``", $r.Status, $r.Detail)) }
+    $mdTables['Controles en echec restants (apres)'] = $t
+}
 # Tableau recapitulatif complet : un seul tableau listant TOUS les controles
 # testes, avec le statut avant/apres, l'evolution et le detail du test.
 $rows = @()
@@ -137,7 +149,10 @@ foreach ($id in $ids) {
             else { 'modifie' }
     $rows += ,@("$idx", "``$id``", $bs, $a.Status, $evol, $a.Detail)
 }
-$mdTables['Recapitulatif complet - tous les controles'] = @(@('#','Controle','Avant','Apres','Evolution','Detail (apres)')) + @($rows)
+$t = [System.Collections.ArrayList]@()
+[void]$t.Add(@('#','Controle','Avant','Apres','Evolution','Detail (apres)'))
+foreach ($r in $rows) { [void]$t.Add($r) }
+$mdTables['Recapitulatif complet - tous les controles'] = $t
 
 # ------------------------------------------------------------------- rendu MD
 $md = @()
@@ -206,7 +221,7 @@ $ctx = @{ esc = $htmlEsc; badge = $badgeClass }
 $sectionsHtml = ""
 foreach ($k in $mdTables.Keys) {
     $rows = [System.Collections.ArrayList]@()
-    foreach ($r in $mdTables[$k]) { [void]$rows.Add(@($r)) }
+    foreach ($r in $mdTables[$k]) { [void]$rows.Add($r) }
     $sectionsHtml += New-HtmlTable -Rows $rows -Title $k -Ctx $ctx
 }
 
