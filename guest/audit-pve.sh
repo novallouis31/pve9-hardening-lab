@@ -495,6 +495,17 @@ sec "PAQUETS INSTALLES (reference securite)"
 # =============================================================================
 run "dpkg -l 2>/dev/null | grep -E 'auditd|apparmor|fail2ban|unattended|libpam-pwquality|openvpn|chrony|rsyslog|ssh-audit|debsums|rkhunter|chkrootkit|nftables|iptables|dnsmasq' | awk '{print \$1, \$2, \$3}'"
 
+# =============================================================================
+# Audits supplementaires (ANSSI, Ceph) selon AUDIT_EXTRA
+# =============================================================================
+if [ -n "${AUDIT_EXTRA:-}" ]; then
+    for extra in $(printf '%s' "$AUDIT_EXTRA" | tr ',' ' '); do
+        if [ -f "/root/audit-$extra.sh" ]; then
+            . "/root/audit-$extra.sh"
+        fi
+    done
+fi
+
 printf '\n### audit-pve.sh - fin %s\n' "$(date -Is)"
 printf '\n## SYNTHESE\n'
 printf 'PASS=%d FAIL=%d NA=%d INFO=%d TOTAL=%d\n' \

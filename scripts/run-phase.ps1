@@ -38,16 +38,17 @@ param(
     [ValidateSet('bootstrap', 'baseline', 'apply', 'verify', 'all')]
     [string]$Phase,
 
-    [ValidateSet('core', 'abua', 'mrmasterbay')]
+    [ValidateSet('core', 'abua', 'mrmasterbay', 'anssi', 'ceph')]
     [string]$Target = 'core',
-
+    
     [string]$SshHost   = '127.0.0.1',
     [int]$SshPort      = 2222,
     [string]$User      = 'root',
     [string]$KeyPath,
-    [ValidateRange(1, 3)]
+    [ValidateRange(1, 4)]
     [int]$Level        = 1,
     [int]$AbuaLevel    = 3,
+    [string]$AuditExtra = '',
     [switch]$SkipVendorVerify
 )
 
@@ -147,15 +148,24 @@ function Invoke-Bootstrap {
 
 # --------------------------------------------------------------- phase: baseline
 function Invoke-Audit {
-    param([string]$Label)
+    param([string]$Label, [string]$AuditExtra = '')
 
     Assert-Ssh
     Copy-ToGuest (Join-Path $guestDir 'audit-pve.sh') '/root/audit-pve.sh'
     Invoke-Ssh -Command 'chmod +x /root/audit-pve.sh' | Out-Null
+    # Scripts d'audit supplementaires (anssi, ceph)
+    foreach ($extra in ($AuditExtra -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+        $extraLocal = Join-Path $guestDir "audit-$extra.sh"
+        if (Test-Path $extraLocal) {
+            Copy-ToGuest $extraLocal "/root/audit-$extra.sh"
+            Invoke-Ssh -Command "chmod +x /root/audit-$extra.sh" | Out-Null
+        }
+    }
 
     $remote = "/tmp/audit-$Label"
     Write-Host "  collecte de l'etat ($Label)..." -ForegroundColor DarkGray
-    $res = Invoke-Ssh -Command "bash /root/audit-pve.sh $remote"
+    $envPrefix = if ($AuditExtra) { "AUDIT_EXTRA=$AuditExtra " } else { '' }
+    $res = Invoke-Ssh -Command "${envPrefix}bash /root/audit-pve.sh $remote"
     if ($res.ExitCode -ne 0) {
         Write-Host $res.Out -ForegroundColor DarkGray
         Write-Host $res.Err -ForegroundColor Red
@@ -195,6 +205,20 @@ function Invoke-Apply {
                 throw "apply-homesec-core.sh a echoue (code $($res.ExitCode))."
             }
         }
+        'anssi' {
+            Copy-ToGuest (Join-Path $guestDir 'apply-anssi.sh') '/root/apply-anssi.sh'
+            Write-Host "  execution ANSSI niveau $Level..." -ForegroundColor DarkGray
+            $res = Invoke-Ssh -Command "LEVEL=$Level bash /root/apply-anssi.sh"
+            $res.Out -split "`n" | Where-Object { $_ -match '^\s*(===|\[|    )' } | Select-Object -Last 40 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+            if ($res.ExitCode -ne 0) { Write-Host $res.Err -ForegroundColor Red; throw "apply-anssi.sh a echoue (code $($res.ExitCode))." }
+        }
+        'ceph' {
+            Copy-ToGuest (Join-Path $guestDir 'apply-ceph.sh') '/root/apply-ceph.sh'
+            Write-Host "  execution Ceph hardening..." -ForegroundColor DarkGray
+            $res = Invoke-Ssh -Command 'bash /root/apply-ceph.sh'
+            $res.Out -split "`n" | Select-Object -Last 20 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+            if ($res.ExitCode -ne 0) { Write-Host $res.Err -ForegroundColor Red; throw "apply-ceph.sh a echoue (code $($res.ExitCode))." }
+        }
         'abua' {
             $src = Join-Path $vendorDir 'abualialfatih23\PVE9-Harden-FinalVersion-v1.sh'
             if (-not (Test-Path $src)) { throw "Artefact manquant : $src (lancer fetch-vendor.ps1)" }
@@ -232,7 +256,8 @@ function Invoke-Apply {
 
 # ---------------------------------------------------------------- phase: verify
 function Invoke-Verify {
-    $dir = Invoke-Audit -Label 'after'
+    param([string]$AuditExtra = '')
+    $dir = Invoke-Audit -Label 'after' -AuditExtra $AuditExtra
     $baseline = Get-ChildItem $artifacts -Directory -Filter 'baseline-*' |
                 Sort-Object Name | Select-Object -Last 1
     if (-not $baseline) {
@@ -252,13 +277,13 @@ if (-not $SkipVendorVerify) {
 
 switch ($Phase) {
     'bootstrap' { Invoke-Bootstrap }
-    'baseline'  { Invoke-Audit -Label 'baseline' | Out-Null }
+    'baseline'  { Invoke-Audit -Label 'baseline' -AuditExtra $AuditExtra | Out-Null }
     'apply'     { Invoke-Apply }
-    'verify'    { Invoke-Verify }
+    'verify'    { Invoke-Verify -AuditExtra $AuditExtra }
     'all'       {
-        Invoke-Audit -Label 'baseline' | Out-Null
+        Invoke-Audit -Label 'baseline' -AuditExtra $AuditExtra | Out-Null
         Invoke-Apply
-        Invoke-Verify
+        Invoke-Verify -AuditExtra $AuditExtra
     }
 }
 
