@@ -122,31 +122,22 @@ if ($improvements.Count) {
     $mdTables['Ameliorations'] = @(@('Controle','Avant','Apres','Detail')) + @($improvements | ForEach-Object { ,@("``$($_.Id)``", $_.Before.Status, $_.After.Status, $_.After.Detail) })
 }
 $mdTables['Controles en echec restants (apres)'] = @(@('Controle','Statut','Detail')) + @($afterChecks.Values | Where-Object { $_.Status -eq 'FAIL' } | ForEach-Object { ,@("``$($_.Id)``", $_.Status, $_.Detail) })
-# Tableau detaille complet : un tableau par categorie de controle (OS, PVE, USR, SYS),
-# avec statut avant/apres, evolution et detail.
-$categories = $afterChecks.Keys | Where-Object { $_ -notmatch '^__' } | ForEach-Object { ($_ -split '\.')[0] } | Sort-Object -Unique
-foreach ($cat in $categories) {
-    $catName = switch ($cat) {
-        'OS'  { 'Systeme d exploitation (OS)' }
-        'PVE' { 'Proxmox VE (PVE)' }
-        'USR' { 'Utilisateurs (USR)' }
-        'SYS' { 'Systeme (SYS)' }
-        default { $cat }
-    }
-    $rows = @()
-    $ids = $afterChecks.Keys | Where-Object { $_ -like "$cat.*" } | Sort-Object
-    foreach ($id in $ids) {
-        $a = $afterChecks[$id]
-        $bs = if ($beforeChecks.Contains($id)) { $beforeChecks[$id].Status } else { '-' }
-        $bDetail = if ($beforeChecks.Contains($id)) { $beforeChecks[$id].Detail } else { '' }
-        $evol = if ($bs -eq $a.Status) { 'inchange' }
-                elseif ($bs -eq 'PASS' -and $a.Status -ne 'PASS') { 'REGRESSION' }
-                elseif ($bs -ne 'PASS' -and $a.Status -eq 'PASS') { 'amelioration' }
-                else { 'modifie' }
-        $rows += ,@("``$id``", $bs, $a.Status, $evol, $a.Detail)
-    }
-    $mdTables["Detail - $catName"] = @(@('Controle','Avant','Apres','Evolution','Detail (apres)')) + @($rows)
+# Tableau recapitulatif complet : un seul tableau listant TOUS les controles
+# testes, avec le statut avant/apres, l'evolution et le detail du test.
+$rows = @()
+$ids = $afterChecks.Keys | Where-Object { $_ -notmatch '^__' } | Sort-Object
+$idx = 0
+foreach ($id in $ids) {
+    $idx++
+    $a = $afterChecks[$id]
+    $bs = if ($beforeChecks.Contains($id)) { $beforeChecks[$id].Status } else { '-' }
+    $evol = if ($bs -eq $a.Status) { 'inchange' }
+            elseif ($bs -eq 'PASS' -and $a.Status -ne 'PASS') { 'regression' }
+            elseif ($bs -ne 'PASS' -and $a.Status -eq 'PASS') { 'amelioration' }
+            else { 'modifie' }
+    $rows += ,@("$idx", "``$id``", $bs, $a.Status, $evol, $a.Detail)
 }
+$mdTables['Recapitulatif complet - tous les controles'] = @(@('#','Controle','Avant','Apres','Evolution','Detail (apres)')) + @($rows)
 
 # ------------------------------------------------------------------- rendu MD
 $md = @()
@@ -198,8 +189,8 @@ function New-HtmlTable {
         for ($c = 0; $c -lt $Rows[0].Count; $c++) {
             $v = $Rows[$i][$c]
             $cls = ""
-            if ($c -gt 0 -and $c -le 2 -and $v) { $cls = " class=""$(& $Ctx['badge'] $v)""" }
-            if ($c -eq 3 -and $v) {
+            if ($c -ge 2 -and $c -le 3 -and $v) { $cls = " class=""$(& $Ctx['badge'] $v)""" }
+            if ($c -eq 4 -and $v) {
                 $ev = ([string]$v).ToLower()
                 if ($ev -in @('amelioration','regression','inchange','modifie')) { $cls = " class=""$ev""" }
             }
