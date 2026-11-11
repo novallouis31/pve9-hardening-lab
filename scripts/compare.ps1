@@ -116,29 +116,37 @@ $meta = [ordered]@{
 # --------------------------------------------------------------- tableaux MD
 $mdTables = [ordered]@{}
 if ($regressions.Count) {
-    $mdTables['Regressions'] = @(
-        @('Controle','Avant','Apres','Detail'),
-        ($regressions | ForEach-Object { ,@("``$($_.Id)``", $_.Before.Status, $_.After.Status, $_.After.Detail) })
-    )
+    $mdTables['Regressions'] = @(@('Controle','Avant','Apres','Detail')) + @($regressions | ForEach-Object { ,@("``$($_.Id)``", $_.Before.Status, $_.After.Status, $_.After.Detail) })
 }
 if ($improvements.Count) {
-    $mdTables['Ameliorations'] = @(
-        @('Controle','Avant','Apres','Detail'),
-        ($improvements | ForEach-Object { ,@("``$($_.Id)``", $_.Before.Status, $_.After.Status, $_.After.Detail) })
-    )
+    $mdTables['Ameliorations'] = @(@('Controle','Avant','Apres','Detail')) + @($improvements | ForEach-Object { ,@("``$($_.Id)``", $_.Before.Status, $_.After.Status, $_.After.Detail) })
 }
-$mdTables['Controles en echec restants (apres)'] = @(
-    @('Controle','Statut','Detail'),
-    ($afterChecks.Values | Where-Object { $_.Status -eq 'FAIL' } | ForEach-Object { ,@("``$($_.Id)``", $_.Status, $_.Detail) })
-)
-$mdTables['Details'] = @(
-    @('Controle','Avant','Apres','Detail apres'),
-    ($afterChecks.Keys | ForEach-Object {
-        $a = $afterChecks[$_]
-        $bs = if ($beforeChecks.Contains($_)) { $beforeChecks[$_].Status } else { '-' }
-        ,@("``$_``", $bs, $a.Status, $a.Detail)
-    })
-)
+$mdTables['Controles en echec restants (apres)'] = @(@('Controle','Statut','Detail')) + @($afterChecks.Values | Where-Object { $_.Status -eq 'FAIL' } | ForEach-Object { ,@("``$($_.Id)``", $_.Status, $_.Detail) })
+# Tableau detaille complet : un tableau par categorie de controle (OS, PVE, USR, SYS),
+# avec statut avant/apres, evolution et detail.
+$categories = $afterChecks.Keys | Where-Object { $_ -notmatch '^__' } | ForEach-Object { ($_ -split '\.')[0] } | Sort-Object -Unique
+foreach ($cat in $categories) {
+    $catName = switch ($cat) {
+        'OS'  { 'Systeme d exploitation (OS)' }
+        'PVE' { 'Proxmox VE (PVE)' }
+        'USR' { 'Utilisateurs (USR)' }
+        'SYS' { 'Systeme (SYS)' }
+        default { $cat }
+    }
+    $rows = @()
+    $ids = $afterChecks.Keys | Where-Object { $_ -like "$cat.*" } | Sort-Object
+    foreach ($id in $ids) {
+        $a = $afterChecks[$id]
+        $bs = if ($beforeChecks.Contains($id)) { $beforeChecks[$id].Status } else { '-' }
+        $bDetail = if ($beforeChecks.Contains($id)) { $beforeChecks[$id].Detail } else { '' }
+        $evol = if ($bs -eq $a.Status) { 'inchange' }
+                elseif ($bs -eq 'PASS' -and $a.Status -ne 'PASS') { 'REGRESSION' }
+                elseif ($bs -ne 'PASS' -and $a.Status -eq 'PASS') { 'amelioration' }
+                else { 'modifie' }
+        $rows += ,@("``$id``", $bs, $a.Status, $evol, $a.Detail)
+    }
+    $mdTables["Detail - $catName"] = @(@('Controle','Avant','Apres','Evolution','Detail (apres)')) + @($rows)
+}
 
 # ------------------------------------------------------------------- rendu MD
 $md = @()
@@ -191,6 +199,10 @@ function New-HtmlTable {
             $v = $Rows[$i][$c]
             $cls = ""
             if ($c -gt 0 -and $c -le 2 -and $v) { $cls = " class=""$(& $Ctx['badge'] $v)""" }
+            if ($c -eq 3 -and $v) {
+                $ev = ([string]$v).ToLower()
+                if ($ev -in @('amelioration','regression','inchange','modifie')) { $cls = " class=""$ev""" }
+            }
             [void]$sb.Append("<td$cls>$(& $Ctx['esc'] $v)</td>")
         }
         [void]$sb.AppendLine('</tr>')
@@ -226,7 +238,7 @@ th { background:#111827; color:#fff; text-align:left; padding:6px 8px; font-weig
 td { border-bottom:1px solid #e5e7eb; padding:5px 8px; vertical-align:top; }
 tr:nth-child(even) td { background:#f9fafb; }
 td.pass, td.fail, td.na, td.info { text-align:center; font-weight:600; width:74px; }
-td.pass { color:var(--pass); } td.fail { color:var(--fail); } td.na { color:var(--na); } td.info { color:var(--info); }
+td.pass { color:var(--pass); } td.fail { color:var(--fail); } td.na { color:var(--na); } td.info { color:var(--info); }\ntd.amelioration { color:var(--pass); font-weight:600; } td.regression { color:var(--fail); font-weight:600; } td.inchange { color:var(--na); } td.modifie { color:var(--info); }
 code { font-family:Consolas,"Courier New",monospace; font-size:9pt; background:#f3f4f6; padding:1px 4px; border-radius:3px; }
 footer { padding:14px 28px 0; color:#6b7280; font-size:8.5pt; border-top:1px solid #e5e7eb; margin-top:24px; }
 @page { size:A4; margin:14mm 12mm 14mm 12mm; }
