@@ -1,0 +1,172 @@
+# Plan de test de hardening — Proxmox VE 9 sur VirtualBox
+
+## Contexte materiel (releve le 10-11/2026)
+
+| Element | Valeur | Impact sur le test |
+|---|---|---|
+| PC hote | Intel i9-11950H, 16 fils, 64 Go RAM, Win 11 | suffisant |
+| VirtualBox | 7.2.12 r174389 | syntaxe `--nat-pf1`, `--uart-mode1=file` |
+| VM cible | `proxmox` (uuid `f4e60ee7-…`), ISO `proxmox-ve_9.2-1.iso` attachee | OK |
+| VT-x imbrique | **non supporte** (`Processor supports nested HW virtualization: no`) | pas de `/dev/kvm` dans la VM : les VMs PVE ne fonctionneront pas, les conteneurs LXC si |
+| VM avant preparation | RAM **64 Mo**, `x86-long-mode=off`, disque **2 Mo**, NAT sans redirection | **non bootable** : corrige par `prepare-vm.ps1` |
+
+> Le manque de virtualisation imbriquee n'empêche pas le test de hardening : les
+> controles visent l'hyperviseur PVE lui-même (SSH, PAM, pare-feu, PVE API, noyau,
+> conteneurs). Il est simplement impossible de creer une VM a l'interieur de la VM.
+
+## Protocole en 8 etapes
+
+Chaque etape est un script : rien n'est fait a la main a part l'installation de
+Proxmox, la lecture des resultats et les decisions d'arbitrage.
+
+### Etape 0 — Recuperer et verifier les projets
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\fetch-vendor.ps1     # telecharge, epinglé sur commit
+powershell -ExecutionPolicy Bypass -File scripts\verify-vendor.ps1    # controle SHA256
+```
+
+### Etape 1 — Preparer la VM
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\prepare-vm.ps1       # VM ETEINTE obligatoire
+```
+
+Corrige : `os-type=Debian_64`, 8 Go RAM, 4 CPU, `x86-long-mode=on`, disque 64 Go,
+`firmware=bios`, boot dvd puis disque, `nic1=nat` virtio, redirection
+`127.0.0.1:8006 -> 8006` et `127.0.0.1:2222 -> 22`, port serie `ttyS0`
+journalise dans `<VM>\console.log` (acces hors bande en cas de blocage), et
+genere la paire de cles SSH du lab dans `.keys/`.
+
+Le choix `bios` (plutot qu'`efi`) est delibere : VirtualBox 7.2 **n'implemente pas**
+le Secure Boot, donc les controles *1.2.1.1 UEFI Secure Boot* et *1.2.1.2 Kernel
+Lockdown* du guide sont declarés **N/A** dans ce lab. Les codes d'audit `audit-pve.sh`
+les classent automatiquement N/A pour ne pas polluer le score.
+
+### Etape 2 — Installer Proxmox VE 9.2
+
+Demarrer la VM (GUI VirtualBox), suivre l'installeur, memoriser le mot de passe root.
+Le partitionnement standard (LVM, ext4) suffit ; ZFS est aussi possible mais avec
+le RAM disponible, LVM est plus representative d'un noeud de test homelab.
+
+A la fin de l'installation, la web UI est sur <https://127.0.0.1:8006/> (certificat
+autologgué, acceptez l'avertissement du navigateur).
+
+### Etape 3 — Ouvrir l'acces SSH automatise (bootstrap)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase bootstrap
+```
+
+Affiche une commande a coller une seule fois dans **Web UI -> Noeud -> Shell**. Elle
+installe la cle publique du lab dans `/root/.ssh/authorized_keys`. Sur PVE ce fichier
+est un lien vers `/etc/pve/priv/authorized_keys` (partage entre noeuds) : sans
+importance sur un noeud seul, mais a connaitre si vous ajoutez des noeuds.
+
+### Etape 4 — Prendre une photographie AVANT
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase baseline
+```
+
+Deploie `guest/audit-pve.sh` (lecture seule) et recupere `artifacts/baseline-<ts>/`
+contenant `audit.txt` et `checks.tsv`. Environ 60 controles objectifs (CIS Debian 13,
+guide PVE 9, STIG) codes `PASS|FAIL|NA|INFO`. **Sans ce baseline, aucune conclusion
+avant/apres n'est possible.**
+
+### Etape 5 — Faire un snapshot
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\vm-snapshot.ps1 -Action Create -Name pre-hardening
+```
+
+Le hardening est destructif par definition. Sans snapshot, une erreur (typiquement :
+couper SSH ou la web UI) impose une reinstallation complete.
+
+### Etape 6 — Appliquer le hardening
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase apply -Target core
+```
+
+Le script du lab accepte un **niveau CIS** : `LEVEL=1` (defaut), `LEVEL=2`, `LEVEL=3`.
+Les blocs non inclus au niveau demande sont affiches `SKIP` avec leur reference de
+controle, donc on sait precisement ce qui n'est pas applique.
+
+| Cible | Ce que c'est | Pourquoi le tester |
+|---|---|---|
+| `core` (defaut) | `guest/apply-homesec-core.sh`, notre automatisation tracée du guide PVE 9 | resultat reproductible, chaque bloc porte sa reference de controle, rollback genere |
+| `abua` | `PVE9-Harden-FinalVersion-v1.sh` pilote a `niveau 3` via PTY | le seul depot du panel deja teste sous VirtualBox ; permet de comparer une implementation a l'autre |
+| `mrmasterbay` | `seuwrity.sh` pilote avec `answers/mrmasterbay.txt` | depot **archive** et tres agressif : sert a documenter ce qui casse |
+
+Périmètre appliqué à `LEVEL=1` (CIS Debian 13 Level 1 + guide 1.2.4) :
+
+| Famille | Controles |
+|---|---|
+| Noyau | modules FS et protocoles inutilises (CIS 1.1.1.x, 3.2.x), core dumps (1.5.11-13), sysctl de base |
+| Systeme de fichiers | `/tmp`, `/var/tmp`, `/dev/shm` nosuid/nodev (+ noexec sur shm) (CIS 1.1.2.x) |
+| Cron / at | permissions 600 / 700 (CIS 2.4.1.x) |
+| Journalisation | journald persistent + compress (CIS 4.2.1.x) |
+| SSH | permissions fichiers (5.1.1-5.1.3), `PermitRootLogin prohibit-password` (deviation § 5.1.21), `PasswordAuthentication no`, chiffrement CIS (5.1.4-5.1.22) |
+| PAM | `pam_faillock` (5.3.3.1), `pwquality` (5.4.1), vieillissement des mots de passe |
+| Patches | `unattended-upgrades` (guide 1.1.3) |
+| Pare-feu | pare-feu PVE active avec regles 22 / 8006 / 3128 depuis le sous-reseau de gestion (guide 1.2.4) |
+| Web | fail2ban sur `pveproxy` (guide 2.3.3) |
+| Comptes | compte nominatif `pveadmin` (guide 2.1.1 / 2.1.2) |
+
+Reportés à `LEVEL=2` : politique FORWARD DROP + backend nftables (1.2.5), auditd
+sur `/etc/pve` (5.1.2), rkhunter (5.3.2), profil ssh-audit strict (1.1.4), umask 027.
+
+Le script `core` inclut des garde-fous : il refuse de couper
+`PasswordAuthentication` tant qu'aucune cle publique n'est installee, verifie
+`sshd -t` avant de redemarrer sshd, genere `/root/rollback-hardening.sh`, et
+sauvegarde chaque fichier touche dans `/root/hardening-backups/<ts>/`.
+
+### Etape 7 — Comparer avant / apres et produire le rapport PDF
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase verify
+```
+
+Appelle `scripts/compare.ps1` qui produit trois fichiers dans `artifacts/` :
+
+| Fichier | Contenu |
+|---|---|
+| `comparatif-<ts>.md` | version Markdown, diffable |
+| `comparatif-<ts>.html` | mise en page imprimee (tableaux, badges PASS/FAIL) |
+| `comparatif-<ts>.pdf` | **livrable final A4**, rendu par Chrome headless |
+
+Le PDF met en avant quatre familles, dans cet ordre de priorite :
+**regressions** (controle conforme devenu non conforme — a analyser), puis
+**ameliorations**, puis **controles encore en echec**, puis **details** des ~60
+controles avec leur statut avant et apres.
+
+Le rendu PDF ne depend d'aucun package : il utilise le moteur d'impression de
+Chrome ou Edge, tous deux presents sur Windows 11 (`scripts/render-pdf.ps1`).
+
+### Etape 8 — Rollback ou itération
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\vm-snapshot.ps1 -Action Restore -Name pre-hardening
+```
+
+## Ce qui est intrinsequement hors portee dans ce lab
+
+| Controle du guide | Raison |
+|---|---|
+| 1.2.1.1 UEFI Secure Boot | VirtualBox 7.2 n'expose pas de Secure Boot |
+| 1.2.1.2 Kernel Lockdown | depend du Secure Boot |
+| 3.x Cluster / Ceph | un seul noeud, pas de virtualisation imbriquee |
+| 4.x PBS / 3-2-1 | necessite un noeud Proxmox Backup Server |
+| 2.3.1/2.3.2 certificats tiers + renouvellement | possible mais hors perimetre du premier passage |
+
+Ces controles sont declares `N/A` par `audit-pve.sh`, pas passes sous silence :
+ils apparaissent dans la synthese sans penaliser le score.
+
+## Livrables attendus
+
+1. `artifacts/baseline-*/audit.txt` — etat de depart
+2. `artifacts/after-*/audit.txt` — etat final
+3. `artifacts/comparatif-*.md` / `.html` / **`.pdf`** — rapport de comparaison (le PDF est le livrable a partager)
+4. `console.log` — journal serie (diagnostic si la VM devient inaccessible)
+5. Transcription de session SSH pour les cibles interactives

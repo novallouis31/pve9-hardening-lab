@@ -1,0 +1,8 @@
+# Secrets et artefacts locaux du lab
+.keys/
+.local/
+vendor/
+
+artifacts/
+reports/*.html
+

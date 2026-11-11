@@ -1,0 +1,131 @@
+# =============================================================================
+# answers/mrmasterbay.txt
+# -----------------------------------------------------------------------------
+# Reponses pre-remplies pour l'assistant interactif "seuwrity.sh"
+# (MrMasterbay/proxmox-security-hardening).
+#
+# ATTENTION : ce fichier est une aide, pas une garantie. Le script pose ~72
+# questions dont l'ordre peut evoluer. Si une reponse se decale, la
+# transcription de la session (artifacts/) permet de corriger.
+#
+# Recommandation : pour un resultat fiable, lancer l'assistant en interactif
+# depuis le shell de la web UI, ou verifier la transcription apres coup.
+#
+# Format : une ligne par question, dans l'ordre.
+# =============================================================================
+
+# mise a jour du script (1-3, defaut 2)
+2
+# l'heure affichee est-elle correcte ? -> y (sinon le script veut installer chrony)
+y
+# installer chrony pour garder l'heure synchronisee ?
+y
+# taper YES pour continuer
+YES
+# IP du noeud du cluster (en NAT VirtualBox l'invite est 10.0.2.15)
+10.0.2.15
+# IP du jumphost (passerelle NAT VirtualBox)
+10.0.2.2
+# continuer avec cette configuration ?
+y
+# nom du superadmin (vide = defaut du script)
+# nom du backupadmin (vide = defaut du script)
+# choix 2FA (1 = TOTP a scanner au mobile ->bloquant, 2 = desactive)
+2
+# mode de gestion des utilisateurs (1-2, defaut 1)
+1
+# nom superadmin / backupadmin (vides = defauts)
+#
+#
+# configuration IPv6 (1-2, defaut 1)
+1
+# verifier et configurer les serveurs DNS de secours ? -> n
+n
+# anonymiser la banniere Postfix ? -> n
+n
+# configurer les rounds de hachage des mots de passe ?
+y
+# installer et configurer la qualite des mots de passe ?
+y
+# activer la politique de vieillissement des mots de passe ?
+y
+# activer les alertes email quotidiennes d'expiration ? -> n
+n
+# appliquer le vieillissement a root/superadmin/backupadmin ?
+y
+# envoyer un email de test ? -> n
+n
+# durcir l'umask par defaut de 022 a 027 ?
+y
+# nettoyer les anciennes configurations de paquets ?
+y
+# installer debsums (verification d'integrite des paquets) ?
+y
+# definir une banniere d'avertissement locale ?
+y
+# definir une banniere d'avertissement distante ?
+y
+# activer les scans planifies hebdomadaires ?
+y
+# email pour les rapports de scan (vide = ignorer)
+#
+# lancer le scan initial maintenant (long) ? -> n
+n
+# installer un scanner malware/rootkit ? -> n
+n
+# installer AIDE (surveillance d'integrite de fichiers) ?
+y
+# installer acct (comptabilite de processus) ?
+y
+# installer sysstat (statistiques systeme) ?
+y
+# installer libpam-tmpdir (/tmp isole par session) ?
+y
+# installer apt-show-versions (gestion des correctifs) ?
+y
+# desactiver les peripheriques USB/Firewire ?
+y
+# restreindre les compilateurs a root ?
+y
+# creer une whitelist Lynis pour Proxmox ?
+y
+# desactiver les modules noyau inutilises ?
+y
+# timeout de shell automatique apres 15 minutes ?
+y
+# desactiver les core dumps ?
+y
+# durcir cron/at ?
+y
+# durcir les permissions des fichiers SSH ?
+y
+# durcir la configuration journald ?
+y
+# verrouillage de compte apres 5 echecs (pam_faillock) ?
+y
+# historique des mots de passe (24 derniers) ?
+y
+# durcissement cryptographique SSH ?
+y
+# durcir les options de montage ?
+y
+# auditer et corriger les permissions des fichiers systeme ?
+y
+# limiter a 10 les sessions simultanees par utilisateur ?
+y
+# desactiver automatiquement les comptes inactifs (35 jours) ?
+y
+# supprimer les services legacy non securises ?
+y
+# activer auditd au demarrage ?
+y
+# activer les regles d'audit STIG etendues ?
+y
+# ajouter les outils d'audit au suivi d'integrite AIDE ?
+y
+# activer la protection memoire du noyau ?
+y
+# rendre les regles d'audit immuables (-e 2) ?
+y
+# afficher un "secret" ? -> n
+n

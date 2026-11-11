@@ -1,0 +1,265 @@
+<#
+.SYNOPSIS
+    Orchestrateur du lab de test de hardening Proxmox VE 9.
+
+.DESCRIPTION
+    Enchaine les etapes du protocole de test :
+
+      bootstrap  affiche la commande a coller dans le shell de la web UI PVE
+                 pour installer la cle publique du lab (acces SSH automatise)
+      baseline   collecte l'etat de securite AVANT hardening
+      apply      applique un hardenur sur le noeud
+      verify     collecte l'etat APRES hardening et compare au baseline
+      all        baseline -> apply -> verify
+
+    La collecte s'appuie sur guest/audit-pve.sh (lecture seule) : environ 60
+    controles objectifs (CIS Debian 13 / guide PVE 9) sont evalues et stockes
+    au format @@CHECK <ID> <PASS|FAIL|NA|INFO> <detail>, ce qui rend le
+    avant/apres directement comparable.
+
+.PARAMETER Phase
+    bootstrap | baseline | apply | verify | all
+
+.PARAMETER Target
+    core        (defaut) script du lab, traceable, applique le guide PVE 9
+    abua        PVE-9-Hardening (abualialfatih23) - assistant interactif pilote
+    mrmasterbay proxmox-security-hardening (MrMasterbay) - assistant interactif
+                agressif, depot GitHub archive
+
+.EXAMPLE
+    powershell -File scripts\run-phase.ps1 -Phase bootstrap
+    powershell -File scripts\run-phase.ps1 -Phase baseline
+    powershell -File scripts\run-phase.ps1 -Phase apply -Target core
+    powershell -File scripts\run-phase.ps1 -Phase verify
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('bootstrap', 'baseline', 'apply', 'verify', 'all')]
+    [string]$Phase,
+
+    [ValidateSet('core', 'abua', 'mrmasterbay')]
+    [string]$Target = 'core',
+
+    [string]$SshHost   = '127.0.0.1',
+    [int]$SshPort      = 2222,
+    [string]$User      = 'root',
+    [string]$KeyPath,
+    [ValidateRange(1, 3)]
+    [int]$Level        = 1,
+    [int]$AbuaLevel    = 3,
+    [switch]$SkipVendorVerify
+)
+
+$ErrorActionPreference = 'Stop'
+
+# ----------------------------------------------------------------- chemins
+$scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+$labRoot    = Split-Path -Parent $scriptDir
+$guestDir   = Join-Path $labRoot 'guest'
+$vendorDir  = Join-Path $labRoot 'vendor'
+$artifacts  = Join-Path $labRoot 'artifacts'
+if (-not $KeyPath) { $KeyPath = Join-Path $labRoot '.keys\id_ed25519' }
+$knownHosts = Join-Path $labRoot '.keys\known_hosts'
+
+New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+
+$sshOpts = @(
+    '-i', $KeyPath,
+    '-p', $SshPort,
+    '-o', 'StrictHostKeyChecking=no',
+    '-o', "UserKnownHostsFile=$knownHosts",
+    '-o', 'ConnectTimeout=10',
+    '-o', 'LogLevel=ERROR'
+)
+
+# ----------------------------------------------------------------- helpers
+function Write-Step { param([string]$m) Write-Host "`n=== $m ===" -ForegroundColor Cyan }
+
+function Test-Ssh {
+    & ssh @sshOpts "$User@$SshHost" 'true' 2>$null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Invoke-Ssh {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [string[]]$StandardInput
+    )
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+        if ($StandardInput) {
+            $payload = ($StandardInput -join "`n") + "`n"
+            $payload | & ssh @sshOpts "$User@$SshHost" $Command 1> $outFile 2> $errFile
+        } else {
+            & ssh @sshOpts "$User@$SshHost" $Command 1> $outFile 2> $errFile
+        }
+        $code = $LASTEXITCODE
+        $out = (Get-Content $outFile -Raw -ErrorAction SilentlyContinue)
+        $err = (Get-Content $errFile -Raw -ErrorAction SilentlyContinue)
+        return [pscustomobject]@{ ExitCode = $code; Out = $out; Err = $err }
+    } finally {
+        Remove-Item $outFile, $errFile -ErrorAction SilentlyContinue
+    }
+}
+
+function Copy-ToGuest {
+    param([string]$Local, [string]$Remote)
+    & scp -P $SshPort -i $KeyPath -o 'StrictHostKeyChecking=no' -o "UserKnownHostsFile=$knownHosts" `
+        -o 'LogLevel=ERROR' $Local "$User@$SshHost`:$Remote" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Echec du transfert de $Local vers $Remote" }
+    Write-Host "  transfere : $(Split-Path -Leaf $Local) -> $Remote" -ForegroundColor DarkGray
+}
+
+function Assert-Ssh {
+    if (-not (Test-Ssh)) {
+        Write-Host ""
+        Write-Host "Connexion SSH impossible vers $User@$SshHost`:$SshPort" -ForegroundColor Red
+        Write-Host "Verifiez :" -ForegroundColor Red
+        Write-Host "  1. la VM est demarree et l'installation de PVE est terminee"
+        Write-Host "  2. la redirection NAT est active (port $SshPort -> 22)"
+        Write-Host "  3. la cle publique du lab est installee (phase bootstrap)"
+        throw "SSH indisponible"
+    }
+}
+
+# --------------------------------------------------------------- phase: bootstrap
+function Invoke-Bootstrap {
+    Write-Step 'bootstrap - injection de la cle publique du lab'
+    if (-not (Test-Path $KeyPath)) {
+        throw "Cle absente : $KeyPath. Lancez d'abord scripts\prepare-vm.ps1."
+    }
+    $pub = (Get-Content "$KeyPath.pub" -Raw).Trim()
+    Write-Host "Cle publique du lab :" -ForegroundColor Green
+    Write-Host "  $pub" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Collez cette commande dans Web UI -> Noeud -> Shell :" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  bash -c 'mkdir -p /root/.ssh && chmod 700 /root/.ssh && echo `"$pub`" >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Ou copiez le script bootstrap-sshkey.sh dans la VM et lancez :" -ForegroundColor DarkGray
+    Write-Host "  bash /root/bootstrap-sshkey.sh '$pub'" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Note : sur PVE, /root/.ssh/authorized_keys est un lien vers" -ForegroundColor DarkGray
+    Write-Host "/etc/pve/priv/authorized_keys (partage entre les noeuds du cluster)." -ForegroundColor DarkGray
+}
+
+# --------------------------------------------------------------- phase: baseline
+function Invoke-Audit {
+    param([string]$Label)
+
+    Assert-Ssh
+    Copy-ToGuest (Join-Path $guestDir 'audit-pve.sh') '/root/audit-pve.sh'
+    Invoke-Ssh -Command 'chmod +x /root/audit-pve.sh' | Out-Null
+
+    $remote = "/tmp/audit-$Label"
+    Write-Host "  collecte de l'etat ($Label)..." -ForegroundColor DarkGray
+    $res = Invoke-Ssh -Command "bash /root/audit-pve.sh $remote"
+    if ($res.ExitCode -ne 0) {
+        Write-Host $res.Out -ForegroundColor DarkGray
+        Write-Host $res.Err -ForegroundColor Red
+        throw "La collecte d'audit a echoue (code $($res.ExitCode))"
+    }
+
+    $stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $dir    = Join-Path $artifacts "$Label-$stamp"
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+    # On recupere le fichier produced par le script (checks.tsv + audit.txt)
+    & scp -P $SshPort -i $KeyPath -o 'StrictHostKeyChecking=no' -o "UserKnownHostsFile=$knownHosts" `
+        -o 'LogLevel=ERROR' "$User@$SshHost`:$remote/audit.txt" (Join-Path $dir 'audit.txt') 2>&1 | Out-Null
+    & scp -P $SshPort -i $KeyPath -o 'StrictHostKeyChecking=no' -o "UserKnownHostsFile=$knownHosts" `
+        -o 'LogLevel=ERROR' "$User@$SshHost`:$remote/checks.tsv" (Join-Path $dir 'checks.tsv') 2>&1 | Out-Null
+
+    $summary = ($res.Out -split "`n" | Where-Object { $_ -match '^PASS=' }) -join ''
+    Write-Host "  rapport : $dir\audit.txt" -ForegroundColor Green
+    if ($summary) { Write-Host "  synthese : $summary" -ForegroundColor Green }
+    return $dir
+}
+
+# ----------------------------------------------------------------- phase: apply
+function Invoke-Apply {
+    Assert-Ssh
+    Write-Step "apply - cible : $Target"
+
+    switch ($Target) {
+        'core' {
+            Copy-ToGuest (Join-Path $guestDir 'apply-homesec-core.sh') '/root/apply-homesec-core.sh'
+            Write-Host "  execution du script du lab, niveau CIS $Level (controles traces du guide PVE 9)..." -ForegroundColor DarkGray
+            $res = Invoke-Ssh -Command "LEVEL=$Level bash /root/apply-homesec-core.sh"
+            $res.Out -split "`n" | Where-Object { $_ -match '^\s*(===|\[|    )' } | Select-Object -Last 60 |
+                ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+            if ($res.ExitCode -ne 0) {
+                Write-Host $res.Err -ForegroundColor Red
+                throw "apply-homesec-core.sh a echoue (code $($res.ExitCode))."
+            }
+        }
+        'abua' {
+            $src = Join-Path $vendorDir 'abualialfatih23\PVE9-Harden-FinalVersion-v1.sh'
+            if (-not (Test-Path $src)) { throw "Artefact manquant : $src (lancer fetch-vendor.ps1)" }
+            Copy-ToGuest $src '/root/PVE9-Harden-FinalVersion-v1.sh'
+            Write-Host "  assistant interactif pilote : menu 1 -> niveau $AbuaLevel -> menu 5 (quitter)" -ForegroundColor DarkGray
+            # PTY obligatoire : le script utilise 'tput' et 'clear' pour la barre de progression.
+            $answers = @('1', "$AbuaLevel", '5')
+            $res = Invoke-Ssh -Command 'TERM=xterm script -q -e -c "bash /root/PVE9-Harden-FinalVersion-v1.sh" /dev/null' -StandardInput $answers
+            $res.Out -split "`n" | Select-Object -Last 80 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+            if ($res.ExitCode -ne 0) {
+                Write-Host $res.Err -ForegroundColor Red
+                throw "Le script abualialfatih23 a echoue (code $($res.ExitCode))."
+            }
+        }
+        'mrmasterbay' {
+            $src = Join-Path $vendorDir 'mrmasterbay\seuwurity.sh'
+            if (-not (Test-Path $src)) { throw "Artefact manquant : $src (lancer fetch-vendor.ps1)" }
+            Copy-ToGuest $src '/root/seuwurity.sh'
+            $ansFile = Join-Path $labRoot 'answers\mrmasterbay.txt'
+            # On ne garde ni les commentaires ni les lignes vides du fichier de reponses
+            $answers = if (Test-Path $ansFile) {
+                Get-Content $ansFile | ForEach-Object { ($_ -split '#', 2)[0].Trim() } |
+                    Where-Object { $_ -ne '' }
+            } else { @('y') }
+            Write-Host "  assistant interactif pilote avec $($answers.Count) reponses" -ForegroundColor DarkGray
+            $res = Invoke-Ssh -Command 'TERM=xterm script -q -e -c "bash /root/seuwurity.sh" /dev/null' -StandardInput $answers
+            $res.Out -split "`n" | Select-Object -Last 80 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+            if ($res.ExitCode -ne 0) {
+                Write-Host $res.Err -ForegroundColor Red
+                throw "Le script MrMasterbay a echoue (code $($res.ExitCode))."
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------- phase: verify
+function Invoke-Verify {
+    $dir = Invoke-Audit -Label 'after'
+    $baseline = Get-ChildItem $artifacts -Directory -Filter 'baseline-*' |
+                Sort-Object Name | Select-Object -Last 1
+    if (-not $baseline) {
+        Write-Warning "Aucun baseline trouve. Lancez d'abord -Phase baseline."
+        return
+    }
+    Write-Step "compare - $([System.IO.Path]::GetFileName($baseline.FullName)) vs $([System.IO.Path]::GetFileName($dir))"
+    & (Join-Path $scriptDir 'compare.ps1') -Before $baseline.FullName -After $dir
+}
+
+# ------------------------------------------------------------------- dispatch
+if (-not $SkipVendorVerify) {
+    Write-Host "Verification de l'integrite des artefacts..." -ForegroundColor DarkGray
+    & (Join-Path $scriptDir 'verify-vendor.ps1') | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Artefacts alteres : lancer fetch-vendor.ps1 -Force." }
+}
+
+switch ($Phase) {
+    'bootstrap' { Invoke-Bootstrap }
+    'baseline'  { Invoke-Audit -Label 'baseline' | Out-Null }
+    'apply'     { Invoke-Apply }
+    'verify'    { Invoke-Verify }
+    'all'       {
+        Invoke-Audit -Label 'baseline' | Out-Null
+        Invoke-Apply
+        Invoke-Verify
+    }
+}
+
+Write-Host "`nPhase '$Phase' terminee." -ForegroundColor Green

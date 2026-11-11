@@ -1,0 +1,12 @@
+﻿{
+    "vmName":  "proxmox",
+    "memoryMB":  8192,
+    "cpuCount":  4,
+    "diskGB":  64,
+    "firmware":  "bios",
+    "iso":  "C:\\Users\\Louis\\Downloads\\proxmox-ve_9.2-1.iso",
+    "webUrl":  "https://127.0.0.1:8006/",
+    "sshTarget":  "root@127.0.0.1 -p 2222",
+    "sshKey":  "C:\\Users\\Louis\\Documents\\Projet par défaut\\pve9-hardening-lab\\.keys\\id_ed25519",
+    "consoleLog":  "C:\\Users\\Louis\\VirtualBox VMs\\proxmox\\console.log"
+}
