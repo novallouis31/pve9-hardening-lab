@@ -6,16 +6,23 @@ Objectifs : mesurer la **conformite CIS Debian 13 / ANSSI BP-028 / Ceph**, verif
 que le durcissement **ne casse ni Proxmox ni l'OS** (69 tests fonctionnels
 avant/apres), et produire un **rapport PDF du delta** par guide.
 
+> **Gestion du depot avec GitKraken** (client Git graphique du poste) :
+> [docs/GITKRAKEN.md](docs/GITKRAKEN.md) — creation du PAT, clone, push,
+> pull requests, resolution de conflits, depannage.
+> La CLI GitKraken (`gk`) est egalement supportee (`gk provider add github -t <PAT>`).
+
 ## Resultats
 
 | Perimetre | PASS avant | PASS apres | Delta | Compliance | Regressions | Reg. fonctionnelles |
 |---|---:|---:|---:|---:|---:|---:|
 | CIS Level 1 | 67 | 131 | +64 | 89,4 % | 0 | 0 |
 | CIS Level 2 | 67 | 132 | +65 | 100 % | 0 | 0 |
-| **Stack complet (CIS L2 + ANSSI N3 + Ceph)** | 67 | **146** | **+79** | **100 %** | **0** | **0** |
+| **Stack complet (CIS L2 + ANSSI N3 + Ceph)** | 67 | **145** | **+78** | **100 %** | **0** | **0** |
 
 **160 controles** collectes par 5 modules, **0 echec** sur le stack complet, et
-**0 regression** fonctionnelle sur les 3 VM de validation croisee.
+**0 regression** fonctionnelle. La validation croisee (meme cycle sur des VM
+independantes) donne des resultats **strictement identiques** — voir
+[reports/rapport-validation-croisee.md](reports/rapport-validation-croisee.md).
 
 ### Conformite par perimetre (stack complet)
 
@@ -31,8 +38,8 @@ avant/apres), et produire un **rapport PDF du delta** par guide.
 
 | Suite | Script | Objet | Tests |
 |---|---|---|---:|
-| Proxmox | `guest/func-test-pve.sh` | le durcissement ne casse **pas Proxmox** | 21 |
-| OS | `guest/func-test-os.sh` | le durcissement ne casse **pas l'OS** | 48 |
+| Proxmox | `guest/func-test-pve.sh` | le durcissement ne casse **pas Proxmox** | 23 |
+| OS | `guest/func-test-os.sh` | le durcissement ne casse **pas l'OS** | 49 |
 
 La suite OS est indispensable : elle a mis en evidence une regression
 (`fail2ban` en `status=255`, OS en etat `degraded`) **invisible** pour les seuls
@@ -72,6 +79,7 @@ pve9-hardening-lab/
 |   |-- run-phase.ps1        orchestrateur : bootstrap|baseline|apply|verify|all
 |   |-- compare.ps1          rapport de comparaison avant / apres (+ tests fonctionnels)
 |   |-- render-pdf.ps1       rendu PDF via Chrome headless
+|   |-- publish-github.ps1   publication GitHub (PAT ou CLI GitKraken)
 |   |-- ssh-tool.py          wrapper SSH/SFTP (paramiko) : test|exec|put|get
 |-- guest/
 |   |-- audit-pve.sh         collecteur PVE/CIS de base, LECTURE SEULE
@@ -79,8 +87,8 @@ pve9-hardening-lab/
 |   |-- audit-anssi.sh       controles ANSSI BP-028
 |   |-- audit-ceph.sh        controles Ceph
 |   |-- audit-communautaire.sh controles harbian-audit + BP-028
-|   |-- func-test-pve.sh     tests fonctionnels Proxmox (21)
-|   |-- func-test-os.sh      tests fonctionnels OS (48)
+|   |-- func-test-pve.sh     tests fonctionnels Proxmox (23)
+|   |-- func-test-os.sh      tests fonctionnels OS (49)
 |   |-- apply-homesec-core.sh durcissement CIS niveau 1 a 4
 |   |-- apply-anssi.sh       durcissement ANSSI niveau 1 a 4
 |   |-- apply-ceph.sh        durcissement Ceph
@@ -92,7 +100,22 @@ pve9-hardening-lab/
 |-- docs/PLAN-DE-TEST.md     protocole complet
 |-- docs/CHOIX-PROJET.md     analyse comparative des projets GitHub
 |-- docs/DEPLOIEMENT-AUTOMATIQUE.md  creation de la VM PVE sans intervention
+|-- docs/GITKRAKEN.md        utilisation de GitKraken (PAT, push, PR, conflits)
 ```
+
+## Publier le depot avec GitKraken
+
+```powershell
+# 1. enregistrer le Personal Access Token dans la CLI GitKraken
+gk provider add github -t ghp_VOTRE_JETON
+gk whoami
+
+# 2. publier (le script verifie l'absence de secret avant le push)
+powershell -ExecutionPolicy Bypass -File scripts\publish-github.ps1 -Token ghp_VOTRE_JETON
+```
+
+Detail des operations (clone, push, pull request, conflits, depannage) :
+[docs/GITKRAKEN.md](docs/GITKRAKEN.md).
 
 ## Demarrage rapide
 
