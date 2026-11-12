@@ -169,10 +169,19 @@ CTID=99999
 if ! command -v pct >/dev/null 2>&1; then
     tna "FUNC.LXC.CREATE" "pct absent (systeme minimal)"
 else
-    # template disponible ?
+    # template disponible ? On tente de l'installer si necessaire : sans
+    # template, le test de cycle de vie LXC reste NA et ne prouve rien.
     tmpl=$(pveam list local 2>/dev/null | awk '/debian.*standard/ {print $2}' | head -1)
     if [ -z "$tmpl" ]; then
-        tna "FUNC.LXC.CREATE" "aucun template Debian disponible (pveam update local non execute)"
+        echo "  aucun template local : tentative d'installation via pveam..."
+        pveam update >/dev/null 2>&1 || true
+        tmpl=$(pveam available 2>/dev/null | awk '/debian.*standard/ {print $2}' | head -1)
+        if [ -n "$tmpl" ]; then
+            pveam download "$tmpl" >/dev/null 2>&1 || true
+        fi
+    fi
+    if [ -z "$tmpl" ]; then
+        tna "FUNC.LXC.CREATE" "aucun template Debian disponible (depot pveam inaccessible ?)"
     else
         echo "  template : $tmpl"
         # volume de stockage pour le conteneur
@@ -220,10 +229,21 @@ fi
 # --- 12. Certificat Web UI ---
 echo ""
 echo "--- 12. Certificat TLS de l'interface web ---"
-if [ -f /etc/pve/local/pveproxy-ssl.pem ] || [ -f /etc/pve/pveproxy-ssl.pem ]; then
-    tpass "FUNC.TLS.CERT" "certificat TLS present"
+# Proxmox VE 9 stocke le certificat de l'interface web dans
+# /etc/pve/local/pve-ssl.pem (et NON pveproxy-ssl.pem comme en PVE 8).
+TLS_FOUND=""
+for c in /etc/pve/local/pve-ssl.pem /etc/pve/local/pveproxy-ssl.pem /etc/pve/pveproxy-ssl.pem; do
+    [ -f "$c" ] && { TLS_FOUND="$c"; break; }
+done
+if [ -n "$TLS_FOUND" ]; then
+    # on verifie que le certificat est exploitable (pas un fichier vide)
+    if openssl x509 -in "$TLS_FOUND" -noout -subject >/dev/null 2>&1; then
+        tpass "FUNC.TLS.CERT" "certificat TLS valide : $TLS_FOUND"
+    else
+        tfail "FUNC.TLS.CERT" "certificat TLS illisible : $TLS_FOUND"
+    fi
 else
-    twarn "FUNC.TLS.CERT" "certificat TLS non trouve"
+    twarn "FUNC.TLS.CERT" "certificat TLS introuvable dans /etc/pve/local/"
 fi
 
 # --- 13. Journalisation ---

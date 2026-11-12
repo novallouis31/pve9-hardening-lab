@@ -256,24 +256,64 @@ if ($funcBefore.Count -and $funcAfter.Count) {
     }
     $mdTables['Tests fonctionnels - avant / apres durcissement'] = $t
 
-    # Tableau de synthese par suite
+    # Tableau de synthese par suite : le detail de CHAQUE statut est affiche
+    # (PASS / FAIL / WARN / NA) avant et apres, afin que la somme des
+    # statuts egale toujours le nombre total de tests. Sans cela, les tests
+    # NA ou WARN etaient invisibles et donnaient l'impression que des
+    # tests manquaient ou que des corrections avaient ete masquees.
     $t = [System.Collections.ArrayList]@()
-    [void]$t.Add(@('Suite','Tests','PASS avant','PASS apres','FAIL avant','FAIL apres','Regression'))
+    [void]$t.Add(@('Suite','Tests','PASS av.','PASS ap.','FAIL av.','FAIL ap.','WARN av.','WARN ap.','NA av.','NA ap.','Regression','Controle somme'))
     foreach ($suite in @('Proxmox', 'OS')) {
         $ids = @($funcAfter.Keys | Where-Object {
             if ($suite -eq 'OS') { $_ -like 'OS.*' } else { $_ -notlike 'OS.*' }
         })
         if ($ids.Count -eq 0) { continue }
-        $pb2 = @($ids | Where-Object { $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'PASS' }).Count
-        $pa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'PASS' }).Count
-        $fb2 = @($ids | Where-Object { $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'FAIL' }).Count
-        $fa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'FAIL' }).Count
+        $stat = @{}
+        foreach ($st in @('PASS','FAIL','WARN','NA')) {
+            $stat["b_$st"] = @($ids | Where-Object { $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq $st }).Count
+            $stat["a_$st"] = @($ids | Where-Object { $funcAfter[$_].Status -eq $st }).Count
+        }
         $rg2 = @($ids | Where-Object {
             $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'PASS' -and $funcAfter[$_].Status -ne 'PASS'
         }).Count
-        [void]$t.Add(@($suite, $ids.Count, $pb2, $pa2, $fb2, $fa2, $rg2))
+        $sommeA = $stat['a_PASS'] + $stat['a_FAIL'] + $stat['a_WARN'] + $stat['a_NA']
+        $controle = if ($sommeA -eq $ids.Count) { "OK ($sommeA/$($ids.Count))" } else { "ECART ($sommeA/$($ids.Count))" }
+        [void]$t.Add(@($suite, $ids.Count, $stat['b_PASS'], $stat['a_PASS'], $stat['b_FAIL'], $stat['a_FAIL'],
+                      $stat['b_WARN'], $stat['a_WARN'], $stat['b_NA'], $stat['a_NA'], $rg2, $controle))
     }
+    # Ligne de controle globale
+    $totB = $funcBefore.Count; $totA = $funcAfter.Count
+    $sB = @($funcBefore.Values | Where-Object { $_.Status -in @('PASS','FAIL','WARN','NA') }).Count
+    $sA = @($funcAfter.Values  | Where-Object { $_.Status -in @('PASS','FAIL','WARN','NA') }).Count
+    $controleGlobal = if (($sB -eq $totB) -and ($sA -eq $totA)) { "OK" } else { "ECART" }
+    [void]$t.Add(@('TOTAL', $totA,
+        @($funcBefore.Values | Where-Object { $_.Status -eq 'PASS' }).Count,
+        @($funcAfter.Values | Where-Object { $_.Status -eq 'PASS' }).Count,
+        @($funcBefore.Values | Where-Object { $_.Status -eq 'FAIL' }).Count,
+        @($funcAfter.Values | Where-Object { $_.Status -eq 'FAIL' }).Count,
+        @($funcBefore.Values | Where-Object { $_.Status -eq 'WARN' }).Count,
+        @($funcAfter.Values | Where-Object { $_.Status -eq 'WARN' }).Count,
+        @($funcBefore.Values | Where-Object { $_.Status -eq 'NA' }).Count,
+        @($funcAfter.Values | Where-Object { $_.Status -eq 'NA' }).Count,
+        $funcRegression, "av.=$sB/$totB ap.=$sA/$totA $controleGlobal"))
     $mdTables['Tests fonctionnels - synthese par suite (non-regression)'] = $t
+
+    # Tableau detaille des tests non-PASS : aucune correction n'est masquee,
+    # chaque WARN et chaque NA est documente avec son motif.
+    $t = [System.Collections.ArrayList]@()
+    [void]$t.Add(@('#','Suite','Test','Statut avant','Statut apres','Detail (apres)'))
+    $i = 0
+    foreach ($id in ($funcAfter.Keys | Sort-Object)) {
+        $a = $funcAfter[$id]
+        $bs = if ($funcBefore.Contains($id)) { $funcBefore[$id].Status } else { '-' }
+        if ($bs -eq 'PASS' -and $a.Status -eq 'PASS') { continue }
+        $i++
+        $suite = if ($id -like 'OS.*') { 'OS' } else { 'Proxmox' }
+        [void]$t.Add(@("$i", $suite, "``$id``", $bs, $a.Status, $a.Detail))
+    }
+    if ($i -gt 0) {
+        $mdTables['Tests fonctionnels - tests non conformes (WARN / NA) documentes'] = $t
+    }
 }
 
 # ------------------------------------------------------------------- rendu MD
@@ -412,9 +452,12 @@ if ($funcBefore.Count -and $funcAfter.Count) {
         $pb2 = @($ids | Where-Object { $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'PASS' }).Count
         $pa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'PASS' }).Count
         $fa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'FAIL' }).Count
+        $wa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'WARN' }).Count
+        $na2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'NA' }).Count
         $cls = if ($fa2 -eq 0) { 'good' } else { 'bad' }
         $lbl = if ($suite -eq 'OS') { 'Non-regression OS' } else { 'Non-regression Proxmox' }
         $sumHtml += "<div><div class=""v $cls"">$pa2/$($ids.Count)</div><div class=""l"">$lbl</div></div>"
+        $sumHtml += "<div><div class=""v"">$wa2 / $na2</div><div class=""l"">WARN / NA $lbl</div></div>"
     }
 }
 $sumHtml += "</div>"

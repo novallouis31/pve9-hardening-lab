@@ -62,15 +62,22 @@ if command -v systemctl >/dev/null 2>&1; then
     else
         twarn "OS.SYSTEMD.NOFAILED" "$nfailed unite(s) systemd en echec"
     fi
-    for svc in systemd-journald systemd-logind systemd-timesyncd; do
+    for svc in systemd-journald systemd-logind; do
         if systemctl is-active --quiet "$svc" 2>/dev/null; then
             tpass "OS.SVC.$svc" "$svc actif"
-        elif [ "$svc" = "systemd-timesyncd" ]; then
-            twarn "OS.SVC.$svc" "$svc inactif (chrony/systemd-timesyncd non actif ?)"
         else
             tfail "OS.SVC.$svc" "$svc inactif : OS FONCTIONNELLEMENT CASSÉ"
         fi
     done
+    # Synchronisation horaire : Proxmox VE utilise chrony (systemd-timesyncd
+    # n'est pas present dans l'image PVE). On accepte l'un des deux.
+    if systemctl is-active --quiet chrony 2>/dev/null || systemctl is-active --quiet chronyd 2>/dev/null; then
+        tpass "OS.SVC.TIMESYNC" "chrony actif (service de synchronisation horaire)"
+    elif systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
+        tpass "OS.SVC.TIMESYNC" "systemd-timesyncd actif"
+    else
+        twarn "OS.SVC.TIMESYNC" "aucun service de synchronisation horaire actif (chrony/systemd-timesyncd)"
+    fi
 else
     tna "OS.SYSTEMD.STATE" "systemctl absent"
 fi
