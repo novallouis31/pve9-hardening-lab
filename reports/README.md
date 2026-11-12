@@ -22,6 +22,15 @@ Tests fonctionnels : `guest/func-test-pve.sh` (21 tests Proxmox) et
 | [rapport-stack-complet.pdf](rapport-stack-complet.pdf) | **CIS L2 + ANSSI L3 + Ceph** | 68 | **146** | **+78** | 0 | 0 |
 | [rapport-ANSSI-Level3.pdf](rapport-ANSSI-Level3.pdf) | ANSSI BP-028 niveau 3 seul | 34 | 43 | +9 | 0 | 0 |
 | [rapport-Ceph.pdf](rapport-Ceph.pdf) | Ceph seul | 34 | 39 | +5 | 0 | 0 |
+| [rapport-validation-proxmox.pdf](rapport-validation-proxmox.pdf) | Validation croisee (VM `proxmox`) | 67 | **145** | **+78** | 0 | 0 |
+| [rapport-validation-proxmox3.pdf](rapport-validation-proxmox3.pdf) | Validation croisee (VM `proxmox3`) | 67 | **145** | **+78** | 0 | 0 |
+
+### Validation croisee (reproductibilite)
+
+Le meme cycle a ete execute sur des VM **independantes** : les deux aboutissent
+a des resultats **strictement identiques** (145 PASS / 0 FAIL / 72 tests
+fonctionnels / 5 perimetres a 100 %). Voir
+[rapport-validation-croisee.md](rapport-validation-croisee.md).
 
 ### Conformite par perimetre (stack complet : CIS L2 + ANSSI L3 + Ceph)
 
