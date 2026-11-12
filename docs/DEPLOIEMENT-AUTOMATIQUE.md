@@ -114,8 +114,13 @@ PY
 | **le VM ne redemarre plus apres N restores** | **disques differentiels cumules** | **snapshots (UUID preserve) : ne jamais cloner** |
 | `VERR_DISK_FULL` / `Could not create the clone medium` | **disque hote plein** | verifier `Get-PSDrive C` : il faut ~15 Go libres pour un disque PVE de 64 Go |
 | `createmedium` echoue sans raison claire | medium deja enregistre dans le registre media | detacher le disque (`storageattach ... --medium=none`) **puis** supprimer le fichier, attendre 3 s, recreer |
+| `UUID {...} of the medium does not match the value {...} stored in the media registry` | **registre media de VirtualBox corrompu** (snapshots supprimes a la main) | recreer la VM : `unregistervm <nom> --delete` puis `createvm` + `storageattach` du disque **de base** |
+| 2 emplacements de disque affiches pour le port 0 | UUID fantomes dans le registre | idem : recreer la VM |
 | la VM reboot en boucle, le disque ne grossit pas | l'ISO automatise n'est pas monte (media verrouille) ou `boot1=floppy` | `--boot1=dvd --boot2=disk`, verifier `Port 1, Unit 0` |
 | UUID de disque incompatible GRUB | un **clone VDI** porte un UUID different : `Waiting for root device...` | **snapshots uniquement** (l'UUID est preserve) |
+| `snapshot restore` bloque indefiniment | snapshot sur un disque lent (carte 82540EM) + differentiels cumules | supprimer le snapshot (fusion) et reattacher le disque de base ; privilegier `virtio` |
+| SSH injoignable apres un `snapshot restore` | la restauration ecrase `/etc/pve/priv/authorized_keys` (fichier partage Proxmox) | reinjection automatique de la cle a chaque cycle (voir `Install-SshPubKey`) |
+| SSH injoignable apres un `snapshot restore` | le snapshot a ete restaure **a chaud** (VM en marche) | toujours arreter la VM (`poweroff`) **avant** `snapshot restore` |
 
 ## Regles de disque (cause racine de la plupart des pannes)
 

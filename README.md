@@ -1,38 +1,56 @@
 # pve9-hardening-lab
 
-Lab de test de hardening pour **Proxmox VE 9.x** sur une VM **VirtualBox** locale.
+Lab de test de hardening pour **Proxmox VE 9.x** sur des VM **VirtualBox** locales.
 
 Objectifs : mesurer la **conformite CIS Debian 13 / ANSSI BP-028 / Ceph**, verifier
-que le durcissement **ne casse pas** le fonctionnement de Proxmox (tests
-fonctionnels avant/apres), et produire un **rapport PDF du delta** par guide.
+que le durcissement **ne casse ni Proxmox ni l'OS** (69 tests fonctionnels
+avant/apres), et produire un **rapport PDF du delta** par guide.
 
 ## Resultats
 
-| Guide | Perimetre | PASS avant | PASS apres | Delta | Regressions |
-|---|---|---:|---:|---:|---:|
-| CIS Level 1 | CIS Debian 13 L1 + guide PVE 9 | 47 | 84 | +37 | 0 |
-| CIS Level 2 | + politique DROP / nftables, auditd, rkhunter | 47 | 85 | +38 | 0 |
-| ANSSI BP-028 N3 (renforce) | + AIDE, rsyslog, AppArmor, USB, cron, SSH restreint | 47 | 83 | +36 | 0 |
-| Stack complet | CIS L2 + ANSSI N3 + Ceph | 47 | ~110 | ~+63 | 0 |
+| Perimetre | PASS avant | PASS apres | Delta | Compliance | Regressions | Reg. fonctionnelles |
+|---|---:|---:|---:|---:|---:|---:|
+| CIS Level 1 | 67 | 131 | +64 | 89,4 % | 0 | 0 |
+| CIS Level 2 | 67 | 132 | +65 | 100 % | 0 | 0 |
+| **Stack complet (CIS L2 + ANSSI N3 + Ceph)** | 67 | **146** | **+79** | **100 %** | **0** | **0** |
 
-Les **129 controles** sont collectes par 5 modules (voir `guest/`) :
-`audit-pve.sh` (PVE/OS), `audit-cis13.sh` (CIS Debian 13 officiel),
-`audit-anssi.sh` (ANSSI BP-028), `audit-ceph.sh` (Ceph) et
-`audit-communautaire.sh` (harbian-audit + BP-028).
+**160 controles** collectes par 5 modules, **0 echec** sur le stack complet, et
+**0 regression** fonctionnelle sur les 3 VM de validation croisee.
 
-Chaque rapport PDF comporte une section **« Conformite par perimetre de
-guide »** qui indique la conformite de chaque referentiel apres le cycle.
+### Conformite par perimetre (stack complet)
 
-## Le projet de reference
+| Perimetre | Controles | PASS apres | Echecs | Conformite |
+|---|---:|---:|---:|---:|
+| CIS Debian 13 | 19 | 19 | 0 | **100 %** |
+| ANSSI BP-028 | 32 | 32 | 0 | **100 %** |
+| Ceph | 11 | 6 | 0 | **100 %** |
+| Communautaire (harbian-audit / BP-028) | 31 | 29 | 0 | **100 %** |
+| PVE 9 / OS | 67 | 60 | 0 | **100 %** |
+
+## Tests fonctionnels (non-regression)
+
+| Suite | Script | Objet | Tests |
+|---|---|---|---:|
+| Proxmox | `guest/func-test-pve.sh` | le durcissement ne casse **pas Proxmox** | 21 |
+| OS | `guest/func-test-os.sh` | le durcissement ne casse **pas l'OS** | 48 |
+
+La suite OS est indispensable : elle a mis en evidence une regression
+(`fail2ban` en `status=255`, OS en etat `degraded`) **invisible** pour les seuls
+tests Proxmox.
+
+Chaque rapport PDF contient un tableau de synthese **exhaustif** (PASS / FAIL /
+WARN / NA avant et apres) avec une **colonne de controle** verifiant que la
+somme des statuts egale le total de tests, plus le detail de chaque test non
+PASS.
+
+## Les projets de reference
 
 [`HomeSecExplorer/Proxmox-Hardening-Guide`](https://github.com/HomeSecExplorer/Proxmox-Hardening-Guide)
 (version PVE 9, 581 etoiles, alignement CIS Debian 13 avec les deviations
 Proxmox documentees). Detail du choix et des candidats ecartes :
 [docs/CHOIX-PROJET.md](docs/CHOIX-PROJET.md).
 
-Referentiels communautaires complementaires exploites :
-
-| Source | Usage |
+| Source communautaire | Usage |
 |---|---|
 | `ansible-lockdown/DEBIAN13-CIS` (29*) | IDs et seuils CIS Debian 13 officiels (PAM, umask, permissions) |
 | `Makaveli81/ansible-linux-hardening` (59*) | audit_items ANSSI BP-028 (niveaux M/I/R/E) |
@@ -61,7 +79,8 @@ pve9-hardening-lab/
 |   |-- audit-anssi.sh       controles ANSSI BP-028
 |   |-- audit-ceph.sh        controles Ceph
 |   |-- audit-communautaire.sh controles harbian-audit + BP-028
-|   |-- func-test-pve.sh     tests fonctionnels de non-regression Proxmox
+|   |-- func-test-pve.sh     tests fonctionnels Proxmox (21)
+|   |-- func-test-os.sh      tests fonctionnels OS (48)
 |   |-- apply-homesec-core.sh durcissement CIS niveau 1 a 4
 |   |-- apply-anssi.sh       durcissement ANSSI niveau 1 a 4
 |   |-- apply-ceph.sh        durcissement Ceph
@@ -99,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File scripts\\run-phase.ps1 -Phase all -Targ
 
 | Niveau | Contenu |
 |---|---|
-| CIS 1 | modules noyau, core dumps, sysctl, /tmp /var/tmp /dev/shm, cron, journald, SSH (option B du guide), PAM (faillock+pwquality CIS), ages des patches, pare-feu PVE, fail2ban, comptes nominatifs, auditd /etc/pve, rkhunter, apparmor-utils |
+| CIS 1 | modules noyau, core dumps, sysctl, /tmp /var/tmp /dev/shm, cron, journald, SSH (option B du guide), PAM (faillock+pwquality CIS), ages des patches, pare-feu PVE, fail2ban, comptes nominatifs, auditd /etc/pve, rkhunter, apparmor-utils, sudo, chrony |
 | CIS 2 | + politique DROP / backend nftables, umask 027 |
 | ANSSI 1 | permissions /boot, ctrl-alt-del, sysctl noyau (ASLR, kptr, dmesg, ptrace, BPF), UMASK 027 dans login.defs, TMOUT, shells systeme non interactifs |
 | ANSSI 2 | + aging mots de passe, AIDE (+ cron), AppArmor enforce, rsyslog (omfwd), permissions fichiers de comptes, banner, permissions cron |
@@ -126,17 +145,9 @@ Verifie a chaud sur la VM :
 
 ```
 sshd -T                                      -> permitrootlogin no
-sshd -T -C addr=10.0.2.2   (client du lab)  -> permitrootlogin yes
-sshd -T -C addr=192.0.2.55 (source externe)  -> permitrootlogin no
+sshd -T -C addr=10.0.2.2  (client du lab)   -> permitrootlogin yes
+sshd -T -C addr=192.0.2.55 (source externe) -> permitrootlogin no
 ```
-
-## Tests fonctionnels
-
-`guest/func-test-pve.sh` verifie que le durcissement ne degrade pas PVE : Web UI,
-API, authentification SSH par cle, services critiques, pare-feu, stockage, reseau,
-noeud en ligne, taches, **creation puis destruction d'un conteneur LXC de test**,
-depot de fichiers, certificats, journalisation. Les rapports avant/apres sont
-integres au PDF : **0 echec fonctionnel** dans tous les cycles.
 
 ## Tracabilite et rollback
 
@@ -144,3 +155,19 @@ Chaque bloc de durcissement porte la reference du controle (guide PVE 9, IDs CIS
 Debian 13, ANSSI BP-028, checks harbian-audit). Un script de rollback est genere
 sur le noeud (`/root/rollback-hardening.sh`) et le snapshot VirtualBox `pristine`
 permet de revenir a la base saine entre deux tests.
+
+### Pieges d'outillage resolus (documentees dans docs/DEPLOIEMENT-AUTOMATIQUE.md)
+
+- un **transfert de fichier tronque** produisait un fichier **vide** sur la VM,
+  execute sans rien faire et bloquait le cycle indefiniment -> verification
+  SHA256 + taille systematique ;
+- le **message de succes** du transfert etait ecrit sur stderr, ce que
+  PowerShell 5.1 convertit en erreur bloquante (`ErrorActionPreference=Stop`) ;
+- la **restauration d'un snapshot** ecrase `/etc/pve/priv/authorized_keys`
+  (fichier partage Proxmox) : la cle du lab est desormais reinjectee
+  automatiquement a chaque cycle ;
+- un **snapshot restaure a chaud** laisse le guest sans reseau : le VM doit etre
+  arrete avant `snapshot restore` ;
+- un **clone de disque VDI** porte un UUID different : GRUB ne trouve plus la
+  racine -> **snapshots uniquement** (l'UUID est preserve) ;
+- `VERR_DISK_FULL` : prevoir ~15 Go libres par VM deployee.
