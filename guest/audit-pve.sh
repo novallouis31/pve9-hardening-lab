@@ -400,11 +400,14 @@ fi
 run "cat /etc/pve/firewall/cluster.fw 2>/dev/null"
 nodedir=$(ls -d /etc/pve/nodes/*/ 2>/dev/null | head -n1)
 if [ -n "$nodedir" ] && [ -f "${nodedir}firewall" ]; then
-    pol=$(grep -iE '^\s*(policy|enable)\b' "${nodedir}firewall" 2>/dev/null | tr '\n' ';')
-    if echo "$pol" | grep -qi 'policy\s*drop'; then
-        chk "PVE.FW.FORWARD" PASS "politique FORWARD=DROP ($pol)"
+    # Sur PVE, la politique par defaut est INPUT=DROP : la config peut s'ecrire
+    # "policy_in: DROP", "policy: DROP" ou "policy DROP" -> on accepte les 3.
+    # Attention : "policy_in" ne matche PAS 'policy\b' (_ est un caractere de mot).
+    pol=$(grep -iE '^\s*(policy[_a-z]*|enable)\b' "${nodedir}firewall" 2>/dev/null | tr '\n' ';')
+    if echo "$pol" | grep -qiE 'policy(_in)?[[:space:]]*[:=]?[[:space:]]*drop'; then
+        chk "PVE.FW.FORWARD" PASS "politique INPUT/FORWARD = DROP ($pol)"
     else
-        chk "PVE.FW.FORWARD" FAIL "politique FORWARD non DROP ($pol)"
+        chk "PVE.FW.FORWARD" FAIL "politique INPUT/FORWARD non DROP ($pol)"
     fi
 else
     chk "PVE.FW.FORWARD" NA "pas de configuration firewall par noeud"

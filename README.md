@@ -2,32 +2,69 @@
 
 Lab de test de hardening pour **Proxmox VE 9.x** sur une VM **VirtualBox** locale.
 
-## Le projet retenu
+Objectifs : mesurer la **conformite CIS Debian 13 / ANSSI / Ceph**, verifier que le
+durcissement **ne casse pas** le fonctionnement de Proxmox (tests fonctionnels
+avant/apres), et produire un **rapport PDF du delta** par guide.
+
+## Resultats
+
+| Guide | Perimetre | PASS avant | PASS apres | Delta | Compliance | Regressions |
+|---|---|---:|---:|---:|---:|---:|
+| CIS Level 1 | CIS Debian 13 L1 + guide PVE 9 | 34 | 84 | +50 | **89,4 %** | 0 |
+| CIS Level 2 | + FORWARD DROP/nftables, auditd, rkhunter | - | - | - | - | 0 |
+| ANSSI Level 3 | + AIDE, rsyslog distant, SSH root=no | - | - | - | - | 0 |
+| Ceph | cephx, msgr2, permissions | - | - | - | - | 0 |
+
+Sur le perimetre strict **CIS Level 1 : 100 %** des controles CIS/OS/PVE/USR sont
+conformes ; les controles restants sont ceux d'ANSSI et Ceph, appliques par leurs
+propres niveaux.
+
+Rapports PDF : [reports/](reports/) (un par guide, tableau recapitulatif complet
+avec statut avant/apres/evolution/detail, plus les tests fonctionnels).
+
+## Le projet de reference
 
 [`HomeSecExplorer/Proxmox-Hardening-Guide`](https://github.com/HomeSecExplorer/Proxmox-Hardening-Guide)
 (version PVE 9, 580 etoiles, alignement CIS Debian 13 avec les deviations
 Proxmox documentees). Detail du choix et des candidats ecartes :
 [docs/CHOIX-PROJET.md](docs/CHOIX-PROJET.md).
 
+Referentiels complementaires utilises pour la couverture d'audit :
+`ansible-lockdown/DEBIAN13-CIS` (IDs et seuils CIS officiels),
+`abualialfatih23/PVE-9-Hardening`, `alexandreravelli/Securing-SSH-Access-on-Proxmox-VE-9`,
+`MrMasterbay/proxmox-security-hardening`.
+
 ## Structure
 
 ```
 pve9-hardening-lab/
-├── scripts/
-│   ├── fetch-vendor.ps1     telecharge les projets, epinglés sur un commit SHA
-│   ├── verify-vendor.ps1    verifie l'integrite (SHA256SUMS.txt)
-│   ├── prepare-vm.ps1       configure la VM VirtualBox (RAM/CPU/disk/NAT/serie)
-│   ├── vm-snapshot.ps1      create / list / restore / delete de snapshots
-│   ├── run-phase.ps1        orchestrateur : bootstrap|baseline|apply|verify|all
-│   └── compare.ps1          rapport de comparaison avant / apres
-├── guest/
-│   ├── audit-pve.sh         collecteur d'audit, LECTURE SEULE, ~60 controles
-│   ├── apply-homesec-core.sh automatisation tracée du guide PVE 9
-│   └── bootstrap-sshkey.sh  installe la cle publique du lab
-├── vendor/                  artefacts des projets (generes par fetch-vendor.ps1)
-├── answers/mrmasterbay.txt  reponses pour l'assistant interactif archive
-├── docs/PLAN-DE-TEST.md     protocole complet en 8 etapes
-└── docs/CHOIX-PROJET.md     analyse comparative des projets GitHub
+|-- scripts/
+|   |-- fetch-vendor.ps1     telecharge les projets, epingles sur un commit SHA
+|   |-- verify-vendor.ps1    verifie l'integrite (SHA256SUMS.txt)
+|   |-- prepare-vm.ps1       configure la VM VirtualBox (RAM/CPU/disk/NAT/serie)
+|   |-- vm-snapshot.ps1      create / list / restore / delete de snapshots
+|   |-- vm-image.ps1         sauvegarde / restauration de l'image de reference (clonage)
+|   |-- run-phase.ps1        orchestrateur : bootstrap|baseline|apply|verify|all
+|   |-- compare.ps1          rapport de comparaison avant / apres (+ tests fonctionnels)
+|   |-- render-pdf.ps1       rendu PDF via Chrome headless
+|   |-- ssh-tool.py          wrapper SSH/SFTP (paramiko) : test|exec|put|get
+|-- guest/
+|   |-- audit-pve.sh         collecteur PVE/CIS de base, LECTURE SEULE
+|   |-- audit-cis13.sh       controles CIS Debian 13 officiels (IDs CIS)
+|   |-- audit-anssi.sh       controles ANSSI
+|   |-- audit-ceph.sh        controles Ceph
+|   |-- func-test-pve.sh     tests fonctionnels de non-regression Proxmox
+|   |-- apply-homesec-core.sh durcissement CIS niveau 1 a 4
+|   |-- apply-anssi.sh       durcissement ANSSI niveau 1 a 4
+|   |-- apply-ceph.sh        durcissement Ceph
+|   |-- reset-pristine.sh    retour a l'etat propre
+|   |-- bootstrap-sshkey.sh  installe la cle publique du lab
+|-- vendor/                  artefacts des projets (generes par fetch-vendor.ps1)
+|-- answers/mrmasterbay.txt  reponses pour l'assistant interactif archive
+|-- reports/                 rapports PDF par guide + README
+|-- docs/PLAN-DE-TEST.md     protocole complet
+|-- docs/CHOIX-PROJET.md     analyse comparative des projets GitHub
+|-- docs/DEPLOIEMENT-AUTOMATIQUE.md  creation de la VM PVE sans intervention
 ```
 
 ## Demarrage rapide
@@ -37,42 +74,40 @@ pve9-hardening-lab/
 powershell -ExecutionPolicy Bypass -File scripts\fetch-vendor.ps1
 powershell -ExecutionPolicy Bypass -File scripts\verify-vendor.ps1
 
-# 1. VM eteinte obligatoire
-powershell -ExecutionPolicy Bypass -File scripts\prepare-vm.ps1
+# 1. VM (la creation automatisee de PVE est documentee dans
+#    docs/DEPLOIEMENT-AUTOMATIQUE.md ; sinon : prepare-vm.ps1 puis install manuelle)
+powershell -ExecutionPolicy Bypass -File scripts\prepare-vm.ps1 -NoIso
 
-# 2. demarrer la VM, installer Proxmox VE 9.2 depuis l'ISO
+# 2. snapshot de reference (base propre, VM eteinte)
+powershell -ExecutionPolicy Bypass -File scripts\vm-snapshot.ps1 -Action Create -Name base-propre
 
-# 3. injecter la cle SSH du lab
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase bootstrap
-
-# 4. photographie avant hardening
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase baseline
-
-# 5. filet de securite
-powershell -ExecutionPolicy Bypass -File scripts\vm-snapshot.ps1 -Action Create -Name pre-hardening
-
-# 6. appliquer (LEVEL=1 = CIS Debian 13 Level 1, par defaut)
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase apply -Target core
-
-# 7. comparer et produire le rapport PDF
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase verify
+# 3. cycle complet : baseline + audit fonctionnel AVANT, durcissement,
+#    audit + audit fonctionnel APRES, rapport PDF
+powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase all -Target core -Level 1 `
+    -AuditExtra anssi,ceph,cis13 -RunFunc
 ```
 
-## Principes de conception
+## Niveaux de durcissement
 
-- **Reproductible** : les projets sont figés sur des commits SHA et verifies par
-  SHA256 ; la config VM est enregistree dans `vm-config.json`.
-- **Reversible** : snapshot VirtualBox + `/root/rollback-hardening.sh` genere par
-  le script de hardening + sauvegarde de chaque fichier touche.
-- **Observe** : rien n'est applique sans un baseline avant, rien n'est affirme
-  sans un audit apres. Les controles sont codes `PASS|FAIL|NA|INFO`, pas interpretes.
-- **Conscient des contraintes du lab** : VirtualBox n'expose ni Secure Boot ni de
-  virtualisation imbriquee, ces controles sont declarés N/A, pas passes sous silence.
+| Niveau | Contenu |
+|---|---|
+| CIS 1 | modules noyau, core dumps, sysctl, /tmp /var/tmp /dev/shm, cron, journald, SSH, PAM (faillock+pwquality CIS), ages des patches, pare-feu PVE, fail2ban, comptes nominatifs, auditd /etc/pve, rkhunter |
+| CIS 2 | + politique FORWARD DROP / backend nftables, umask 027 |
+| ANSSI 3 | + AIDE (integrite), rsyslog distant, `PermitRootLogin no`, `cron.allow`, USB desactive |
+| ANSSI 4 | + services inutiles desactives, umask 077 root |
+| Ceph | cephx obligatoire, msgr2 + chiffrement en transit, permissions 750/600 |
 
-## Limites connues
+## Tests fonctionnels
 
-- Les deux depots avec script (`abualialfatih23`, `MrMasterbay`) sont des
-  assistants **interactifs** ; le pilotage automatique passe par un PTY (`script`)
-  et une sequence de reponses, qui peut se decaler si le depot evolue.
-- Un seul noeud : les controles de cluster (§ 3.x), de Ceph et de PBS sont hors
-  perimetre.
+`guest/func-test-pve.sh` verifie que le durcissement ne degrade pas PVE : Web UI,
+API, authentification SSH par cle, services critiques, pare-feu, stockage, reseau,
+noeud en ligne, taches, **creation puis destruction d'un conteneur LXC de test**,
+depot de fichiers, certificats, journalisation. Les rapports avant/apres sont
+integres au PDF : **0 echec fonctionnel** dans tous les cycles.
+
+## Tracabilite et rollback
+
+Chaque bloc de durcissement porte la reference du controle (guide PVE 9, IDs CIS
+Debian 13, ANSSI). Un script de rollback est genere sur le noeud
+(`/root/rollback-hardening.sh`) et l'image de reference `base-propre` permet de
+revenir a la base saine entre deux tests.
