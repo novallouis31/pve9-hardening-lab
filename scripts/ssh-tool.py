@@ -63,15 +63,41 @@ elif ACTION == 'exec':
 elif ACTION == 'put':
     LOCAL_PATH = sys.argv[6]
     REMOTE_PATH = sys.argv[7]
+    # Taille et empreinte du fichier local : servent de reference pour
+    # verifier que le transfert n'a pas ete tronque (connexion coupee en
+    # cours de route => fichier distant vide ou partiel).
+    import hashlib
+    with open(LOCAL_PATH, 'rb') as fh:
+        local_data = fh.read()
+    local_size = len(local_data)
+    local_sha = hashlib.sha256(local_data).hexdigest()
+
+    def verify_remote():
+        """Retourne (ok, taille, sha) du fichier distant."""
+        cmd = "stat -c %s {} 2>/dev/null; sha256sum {} 2>/dev/null | cut -d' ' -f1".format(
+            REMOTE_PATH, REMOTE_PATH)
+        stdin, stdout, stderr = client.exec_command(cmd, timeout=60)
+        o = stdout.read().decode(errors='replace').split()
+        e = stderr.read().decode(errors='replace')
+        code = stdout.channel.recv_exit_status()
+        if code != 0 or len(o) < 2:
+            return (False, 0, '', e)
+        try:
+            size = int(o[0])
+        except ValueError:
+            return (False, 0, '', 'taille illisible: %r' % o[0])
+        return (size == local_size and o[1] == local_sha, size, o[1], e)
+
+    ok = False
     try:
         sftp = client.open_sftp()
         sftp.put(LOCAL_PATH, REMOTE_PATH)
         sftp.close()
+        ok, rsize, rsha, err = verify_remote()
     except Exception as e:
         # Fallback : transfert par base64 via exec (si le sous-systeme sftp est indisponible)
         import base64
-        with open(LOCAL_PATH, 'rb') as fh:
-            payload = base64.b64encode(fh.read()).decode()
+        payload = base64.b64encode(local_data).decode()
         cmd = "echo '{}' | base64 -d > {}".format(payload, REMOTE_PATH)
         stdin, stdout, stderr = client.exec_command(cmd, timeout=EXEC_TIMEOUT)
         out = stdout.read().decode(errors='replace')
@@ -81,6 +107,16 @@ elif ACTION == 'put':
             sys.stderr.write("put fallback failed: {} {}".format(err, out))
             client.close()
             sys.exit(1)
+        ok, rsize, rsha, err = verify_remote()
+
+    if not ok:
+        sys.stderr.write(
+            "put VERIFIE KO : {} attendu={} octets sha={} obtenu={} octets sha={} {}\n".format(
+                REMOTE_PATH, local_size, local_sha[:16], rsize, (rsha or '')[:16], err))
+        client.close()
+        sys.exit(1)
+    sys.stderr.write("put OK : {} ({} octets, sha {})\n".format(
+        REMOTE_PATH, local_size, local_sha[:16]))
     client.close()
     sys.exit(0)
 

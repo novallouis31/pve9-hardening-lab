@@ -126,7 +126,17 @@ function Copy-ToGuest {
     $args = @('put', $SshHost, $SshPort, $User, $KeyPath, $Local, $Remote)
     & $python $tool @args 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Echec du transfert de $Local vers $Remote" }
-    Write-Host "  transfere : $(Split-Path -Leaf $Local) -> $Remote" -ForegroundColor DarkGray
+    # Verification de l'integrite du fichier distant : un transfert tronque
+    # (connexion coupee) produisait un fichier VIDE, execute sans rien faire
+    # et bloquait le cycle indefiniment. On refuse de continuer dans ce cas.
+    $localSize = (Get-Item $Local).Length
+    $check = Invoke-Ssh -Command "stat -c %s $Remote 2>/dev/null || echo 0"
+    $remoteSize = 0
+    if ($check.Out -match '(\d+)') { $remoteSize = [int]$Matches[1] }
+    if ($remoteSize -ne $localSize) {
+        throw "Transfert incomplet : $Remote fait $remoteSize octets au lieu de $localSize"
+    }
+    Write-Host "  transfere : $(Split-Path -Leaf $Local) -> $Remote ($remoteSize octets)" -ForegroundColor DarkGray
 }
 
 function Assert-Ssh {

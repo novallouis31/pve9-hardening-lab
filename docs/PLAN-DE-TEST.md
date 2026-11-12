@@ -106,6 +106,30 @@ ne pouvaient pas voir :
 Le control audit `OS.SSHD.PERMITROOT` a egalement impose de revoir la strategie
 root SSH : voir la section dediee dans le README.
 
+### Trois faux WARN/NA elimines (tests qui signalaient un probleme inexistant)
+
+| Test | Symptome | Cause | Correctif |
+|---|---|---|---|
+| `FUNC.TLS.CERT` | WARN systematique | le test cherchait `pveproxy-ssl.pem` ; Proxmox VE 9 utilise `/etc/pve/local/pve-ssl.pem` | recherche des 3 chemins possibles + validation OpenSSL du certificat |
+| `OS.SVC.systemd-timesyncd` | WARN alors que la synchro est operationnelle | PVE n'embarque pas `systemd-timesyncd` mais **chrony** | le test accepte chrony OU systemd-timesyncd |
+| `FUNC.LXC.CREATE` | NA (aucun test reel) | aucun template Debian local | le test installe le template via `pveam` avant de tester le cycle de vie |
+
+### Tracabilite complete des tests fonctionnels
+
+Le tableau de synthese affiche **tous** les statuts (PASS / FAIL / WARN / NA)
+avant et apres, avec une **colonne de controle** qui verifie que la somme des
+statuts egale le nombre total de tests :
+
+```
+| Suite   | Tests | PASS av. | PASS ap. | FAIL av. | FAIL ap. | WARN av. | WARN ap. | NA av. | NA ap. | Regression | Controle somme |
+| Proxmox | 21    | 19       | 19       | 0        | 0        | 1        | 1        | 1      | 1      | 0          | OK (21/21)    |
+| OS      | 48    | 40       | 47       | 0        | 0        | 4        | 1        | 4      | 0      | 0          | OK (48/48)    |
+| TOTAL   | 69    | 59       | 66       | 0        | 0        | 5        | 2        | 5      | 1      | 0          | av.=69/69 ap.=69/69 OK |
+```
+
+Une section supplementaire detaille **chaque** test non PASS (WARN ou NA) avec
+son motif : aucune correction n'est masquee.
+
 ### Etape 5 — Faire un snapshot
 
 ```powershell
