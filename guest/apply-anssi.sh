@@ -170,8 +170,10 @@ ref "harbian 8.4.1/8.4.2"
 # correspondants echoueraient alors a tort.
 DNS_NAT="${DNS_NAT:-10.0.2.3}"
 if [ "$DRY_RUN" != "1" ]; then
-    if ! getent hosts deb.debian.org >/dev/null 2>&1; then
-        echo "  [ok] DNS non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
+    # cf. apply-homesec-core.sh : la detection repose sur la resolution ET la
+    # joignabilite reelle du depot (le cache DNS peut masquer la panne).
+    if ! getent hosts deb.debian.org >/dev/null 2>&1 || ! timeout 30 apt-get update >/dev/null 2>&1; then
+        echo "  [ok] DNS ou depot non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
         cp -a /etc/resolv.conf /etc/resolv.conf.bak-lab 2>/dev/null || true
         printf 'search lab.local\nnameserver %s\n' "$DNS_NAT" > /etc/resolv.conf
     fi

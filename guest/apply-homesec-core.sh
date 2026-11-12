@@ -374,13 +374,14 @@ ref "CIS Debian 13 5.3.3.1.x / 5.4.1.x / 5.4.2.x + guide PVE 9"
 # d'audit echoueraient alors a tort).
 DNS_NAT="${DNS_NAT:-10.0.2.3}"
 if [ "$DRY_RUN" != "1" ]; then
-    if ! getent hosts deb.debian.org >/dev/null 2>&1; then
-        echo "  [ok] DNS non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
+    # La detection doit reposer sur la resolution ET la joignabilite reelle
+    # du depot : `getent` peut reussir via le cache alors qu'apt echoue.
+    if ! getent hosts deb.debian.org >/dev/null 2>&1 || ! timeout 30 apt-get update >/dev/null 2>&1; then
+        echo "  [ok] DNS ou depot non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
         cp -a /etc/resolv.conf /etc/resolv.conf.bak-lab 2>/dev/null || true
         printf 'search lab.local\nnameserver %s\n' "$DNS_NAT" > /etc/resolv.conf
+        apt-get update -y >/dev/null 2>&1 || echo "  [warn] apt-get update a toujours echoue"
     fi
-    # les listes de paquets peuvent etre absentes ou perimees
-    apt-get update -y >/dev/null 2>&1 || echo "  [warn] apt-get update a echoue (voir /var/log/hardening-*.log)"
 fi
 # sudo et chrony sont requis par la suite de tests fonctionnels OS
 # (non-regression des privileges et de la synchronisation horaire) : sans
