@@ -160,11 +160,34 @@ net.ipv6.conf.all.accept_source_route = 0
 exec_cmd "sysctl --system"
 
 # --- ANSSI / CIS complements : sysctl noyau
-write_file /etc/sysctl.d/98-anssi.conf 0644 "\
-# Genere par apply-homesec-core.sh - ANSSI N1 (sysctl noyau)
+# Fichier distinct de /etc/sysctl.d/98-anssi.conf (ecrit par apply-anssi.sh)
+# pour eviter tout ecrasement quel que soit l'ordre d'application.
+# 97 < 98 : sysctl applique 97 en premier, puis 98 qui surcharge avec les
+# valeurs ANSSI plus strictes.
+write_file /etc/sysctl.d/97-pve-hardening.conf 0644 "\
+# Genere par apply-homesec-core.sh - sysctl noyau (guide PVE 9 / CIS 1.1.x)
 kernel.unprivileged_bpf_disabled = 1
 net.core.bpf_jit_harden = 2
 kernel.yama.ptrace_scope = 2
+kernel.dmesg_restrict = 1
+kernel.kptr_restrict = 2
+kernel.randomize_va_space = 2
+fs.protected_symlinks = 1
+fs.protected_hardlinks = 1
+fs.suid_dumpable = 0
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.tcp_syncookies = 1
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_ra = 0
+net.ipv6.conf.default.accept_ra = 0
 "
 exec_cmd "sysctl --system"
 
@@ -271,15 +294,16 @@ block 1 "5. SSH : permissions, authentification, chiffrement (CIS 5.1.x)"
 # =============================================================================
 ref "CIS Debian 13 5.1.x + deviation guide § 5.1.21"
 SSHD_DROP=/etc/ssh/sshd_config.d/00-pve-hardening.conf
-if [ "$LEVEL" -ge 3 ]; then
-    # ANSSI renforce : PermitRootLogin no
-    ROOT_LOGIN="no"
-else
-    ROOT_LOGIN="prohibit-password"
-fi
+# Guide PVE 9, option B : le root SSH est INTERDIT globalement, sauf depuis le
+# reseau de management (MGMT_CIDR) ou la cle publique est utilisee.
+# Cette option est preferee a un simple 'prohibit-password' : elle applique
+# reellement la recommandation ANSSI BP-028 tout en conservant l'acces du lab.
+# Le fichier produit est identique a celui d'apply-anssi.sh (pas de conflit
+# quel que soit l'ordre d'application des scripts).
 SSH_CONF="\
 # Genere par apply-homesec-core.sh - CIS Debian 13 5.1.x
-PermitRootLogin $ROOT_LOGIN
+# Root SSH restreint au reseau de management (guide PVE 9, option B)
+PermitRootLogin no
 PubkeyAuthentication yes
 PasswordAuthentication no
 PermitEmptyPasswords no
@@ -299,8 +323,10 @@ MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,h
 KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256
 HostKeyAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
 PubkeyAcceptedAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
+Match Address $MGMT_CIDR
+    PermitRootLogin yes
 "
-write_file "$SSHD_DROP" 0644 "$SSH_CONF"
+write_file "$SSHD_DROP" 0600 "$SSH_CONF"
 if [ "$DRY_RUN" != "1" ]; then
     printf 'Acces reserve. Toute activite non autorisee est enregistre.\n' > /etc/issue.net
     chmod 0644 /etc/issue.net

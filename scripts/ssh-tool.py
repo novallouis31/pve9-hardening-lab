@@ -12,6 +12,16 @@ import sys
 import os
 import paramiko
 
+# La console Windows est en cp1252 : l'ecriture directe de sortie UTF-8
+# (apt, log systemd, etc.) leve UnicodeEncodeError et fait echouer l'appel.
+# On configure la sortie en UTF-8 avec replacement des caracteres non
+# representables.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ACTION = sys.argv[1]
 HOST = sys.argv[2]
 PORT = int(sys.argv[3])

@@ -177,6 +177,44 @@ if ($failedAfter) {
     foreach ($r in $failedAfter) { [void]$t.Add(@("``$($r.Id)``", $r.Status, $r.Detail)) }
     $mdTables['Controles en echec restants (apres)'] = $t
 }
+# --------------------------------------- conformite par perimetre de guide
+# Les controles sont regroupes par famille de referentiel : CIS (officiel
+# Debian 13), OS/PVE (guide PVE 9), ANSSI (BP-028), Ceph et controles
+# communautaires. Cela permet de voir quel guide reste non conforme apres
+# l'application d'un niveau donne.
+$scopeOf = {
+    param($id)
+    switch -Regex ($id) {
+        '^CIS\.'                { 'CIS Debian 13' ; break }
+        '^ANS\.'                { 'ANSSI BP-028' ; break }
+        '^CEPH\.'               { 'Ceph' ; break }
+        '^COMM\.'               { 'Communautaire (harbian/BP-028)' ; break }
+        '^(OS|PVE|USR|SYS)\.'   { 'PVE 9 / OS' ; break }
+        default                 { 'Autres' }
+    }
+}
+$t = [System.Collections.ArrayList]@()
+[void]$t.Add(@('Perimetre','Controles','PASS avant','PASS apres','Delta','Echecs restants','Conformite apres'))
+$scopes = @{}
+foreach ($id in $afterChecks.Keys) {
+    if ($id -match '^__') { continue }
+    $sc = & $scopeOf $id
+    if (-not $scopes.ContainsKey($sc)) {
+        $scopes[$sc] = [pscustomobject]@{ Total=0; PB=0; PA=0; FA=0 }
+    }
+    $scopes[$sc].Total++
+    if ($beforeChecks.Contains($id) -and $beforeChecks[$id].Status -eq 'PASS') { $scopes[$sc].PB++ }
+    if ($afterChecks[$id].Status -eq 'PASS') { $scopes[$sc].PA++ }
+    if ($afterChecks[$id].Status -eq 'FAIL') { $scopes[$sc].FA++ }
+}
+foreach ($sc in ($scopes.Keys | Sort-Object)) {
+    $s = $scopes[$sc]
+    $eval = $s.PA + $s.FA
+    $pct = if ($eval -gt 0) { [math]::Round(100 * $s.PA / $eval, 1) } else { 0 }
+    [void]$t.Add(@($sc, $s.Total, $s.PB, $s.PA, ($s.PA - $s.PB), $s.FA, "$pct %"))
+}
+$mdTables['Conformite par perimetre de guide'] = $t
+
 # Tableau recapitulatif complet : un seul tableau listant TOUS les controles
 # testes, avec le statut avant/apres, l'evolution et le detail du test.
 $rows = @()
