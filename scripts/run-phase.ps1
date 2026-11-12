@@ -139,6 +139,27 @@ function Copy-ToGuest {
     Write-Host "  transfere : $(Split-Path -Leaf $Local) -> $Remote ($remoteSize octets)" -ForegroundColor DarkGray
 }
 
+# Injecte la cle publique du lab dans le fichier PARTAGE de Proxmox.
+# Indispensable : apres une restauration de snapshot, /etc/pve/priv/authorized_keys
+# est reinitialise et l'acces SSH par cle est perdu.
+function Install-SshPubKey {
+    if (-not $SshPubKey) { return }
+    $pubFile = "$KeyPath.pub"
+    if (-not (Test-Path $pubFile)) { return }
+    $pub = (Get-Content $pubFile -Raw).Trim()
+    if (-not $pub) { return }
+    # /root/.ssh/authorized_keys est un symlink vers /etc/pve/priv/authorized_keys
+    $cmd = "grep -qF '$pub' /etc/pve/priv/authorized_keys 2>/dev/null || " +
+           "printf '%s\n' '$pub' >> /etc/pve/priv/authorized_keys; " +
+           "chmod 0600 /etc/pve/priv/authorized_keys 2>/dev/null || true; " +
+           "systemctl reload pvedaemon 2>/dev/null || true; " +
+           "grep -c 'ssh-' /etc/pve/priv/authorized_keys 2>/dev/null || echo 0"
+    $res = Invoke-Ssh -Command $cmd
+    $n = 0
+    if ($res.Out -match '(\d+)') { $n = [int]$Matches[1] }
+    Write-Host ("  cle publique du lab installee dans /etc/pve/priv/authorized_keys ({0} cle(s))" -f $n) -ForegroundColor DarkGray
+}
+
 function Assert-Ssh {
     if (-not (Test-Ssh)) {
         Write-Host ""
@@ -241,6 +262,7 @@ function Invoke-Audit {
     param([string]$Label, [string]$AuditExtra = '')
 
     Assert-Ssh
+    Install-SshPubKey
     Copy-ToGuest (Join-Path $guestDir 'audit-pve.sh') '/root/audit-pve.sh'
     Invoke-Ssh -Command 'chmod +x /root/audit-pve.sh' | Out-Null
     # Scripts d'audit supplementaires (anssi, ceph)
@@ -283,6 +305,7 @@ function Invoke-Audit {
 # ----------------------------------------------------------------- phase: apply
 function Invoke-Apply {
     Assert-Ssh
+    Install-SshPubKey
     Write-Step "apply - cible : $Target"
 
     switch ($Target) {
