@@ -2,7 +2,7 @@
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261112-142430`
 - **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-142851`
-- **Genere le** : 2026-11-12 14:28:56
+- **Genere le** : 2026-11-12 14:41:40
 
 ## Synthese
 
@@ -12,6 +12,12 @@
 | Controles en echec (FAIL) | 72 | 11 | (-64) |
 | Regressions | - | 0 | |
 | Ameliorations | - | 64 | |
+| Tests fonctionnels PASS | 59 | 63 | +4 |
+| Regressions fonctionnelles | - | 2 | |
+| Tests fonctionnels Proxmox (PASS / total) | 19 / 21 | 19 / 21 | +0 |
+| Tests fonctionnels Proxmox (FAIL) | - | 0 | |
+| Tests fonctionnels OS (PASS / total) | 40 / 48 | 44 / 48 | +4 |
+| Tests fonctionnels OS (FAIL) | - | 0 | |
 
 ## Ameliorations
 
@@ -272,4 +278,85 @@
 | 158 | `USR.HASH` | INFO | INFO | inchange | 1 comptes avec hash yescrypt ($y$) |
 | 159 | `USR.SHADOW.PERM` | PASS | PASS | inchange | /etc/shadow en 640 |
 | 160 | `USR.UID0` | PASS | PASS | inchange | un seul compte UID 0 |
+
+## Tests fonctionnels - avant / apres durcissement
+
+| # | Suite | Test fonctionnel | Avant | Apres | Evolution | Detail (apres) |
+|---|---|---|---|---|---|---|
+| 1 | Proxmox | `FUNC.FW.API` | PASS | PASS | inchange | options du pare-feu lisibles via l'API |
+| 2 | Proxmox | `FUNC.FW.STATUS` | PASS | PASS | inchange | pve-firewall status repond |
+| 3 | Proxmox | `FUNC.LOG.JOURNALD` | PASS | PASS | inchange | systemd-journald actif |
+| 4 | Proxmox | `FUNC.LXC.CREATE` | NA | NA | inchange | aucun template Debian disponible (pveam update local non execute) |
+| 5 | Proxmox | `FUNC.NET.GATEWAY` | PASS | PASS | inchange | passerelle NAT 10.0.2.2 joignable |
+| 6 | Proxmox | `FUNC.NET.IFACE` | PASS | PASS | inchange | au moins une interface reseau est UP |
+| 7 | Proxmox | `FUNC.NET.VMBR0` | PASS | PASS | inchange | pont vmbr0 present |
+| 8 | Proxmox | `FUNC.NODE.ONLINE` | PASS | PASS | inchange | noeud localhost en ligne |
+| 9 | Proxmox | `FUNC.PVE.API` | PASS | PASS | inchange | API pvesh fonctionnelle |
+| 10 | Proxmox | `FUNC.PVEAM.UPDATE` | PASS | PASS | inchange | pveam update operationnel |
+| 11 | Proxmox | `FUNC.SSH.KEYAUTH` | PASS | PASS | inchange | 2 cle(s) publique(s) autorisee(s) pour root |
+| 12 | Proxmox | `FUNC.STORE.ACTIVE` | PASS | PASS | inchange | au moins un depot de stockage est actif |
+| 13 | Proxmox | `FUNC.STORE.LIST` | PASS | PASS | inchange | pvesm status : 2 entrepot(s) disponible(s) |
+| 14 | Proxmox | `FUNC.SVC.pvedaemon` | PASS | PASS | inchange | pvedaemon actif |
+| 15 | Proxmox | `FUNC.SVC.pve-firewall` | PASS | PASS | inchange | pve-firewall actif |
+| 16 | Proxmox | `FUNC.SVC.pveproxy` | PASS | PASS | inchange | pveproxy actif |
+| 17 | Proxmox | `FUNC.SVC.pvestatd` | PASS | PASS | inchange | pvestatd actif |
+| 18 | Proxmox | `FUNC.SVC.ssh` | PASS | PASS | inchange | ssh actif |
+| 19 | Proxmox | `FUNC.TASKS.LIST` | PASS | PASS | inchange | liste des taches accessible |
+| 20 | Proxmox | `FUNC.TLS.CERT` | WARN | WARN | inchange | certificat TLS non trouve |
+| 21 | Proxmox | `FUNC.WEB.ACCESSIBLE` | PASS | PASS | inchange | Web UI sur 8006 repond (HTTP 200) |
+| 22 | OS | `OS.APPARMOR.LOADED` | PASS | PASS | inchange | 119 profil(s) AppArmor charges |
+| 23 | OS | `OS.APPARMOR.MODULE` | PASS | PASS | inchange | module AppArmor charge dans le noyau |
+| 24 | OS | `OS.APT.CHECK` | PASS | PASS | inchange | apt-get check : dependances coherentes |
+| 25 | OS | `OS.CRON.ALLOW` | PASS | PASS | inchange | aucune restriction /etc/cron.allow pour root |
+| 26 | OS | `OS.CRON.CRONTAB` | PASS | PASS | inchange | commande crontab operationnelle |
+| 27 | OS | `OS.CRON.DAEMON` | PASS | PASS | inchange | cron actif |
+| 28 | OS | `OS.DPKG.CONSISTENT` | PASS | PASS | inchange | aucun paquet en configuration incomplete |
+| 29 | OS | `OS.FS.DISK` | PASS | PASS | inchange | espace disque racine : 18% utilise |
+| 30 | OS | `OS.FS.INODES` | PASS | PASS | inchange | inodes racine : 4% utilise |
+| 31 | OS | `OS.FS.MOUNT` | PASS | PASS | inchange | commande mount operationnelle |
+| 32 | OS | `OS.FS.OPTIONS._dev_shm` | PASS | PASS | inchange | /dev/shm options=rw,nosuid,nodev,noexec,inode64 |
+| 33 | OS | `OS.FS.OPTIONS._tmp` | PASS | PASS | inchange | /tmp options=rw,nosuid,nodev,size=4065212k,nr_inodes=1048576,inode64 |
+| 34 | OS | `OS.FS.OPTIONS._var_tmp` | WARN | PASS | amelioration | /var/tmp options=rw,nosuid,nodev,noexec,relatime,size=524288k,inode64 |
+| 35 | OS | `OS.FS.TMP` | PASS | PASS | inchange | /tmp accessible en ecriture |
+| 36 | OS | `OS.FS.WRITABLE` | PASS | PASS | inchange | racine accessible en ecriture |
+| 37 | OS | `OS.KERNEL.MODULES` | PASS | PASS | inchange | 99 module(s) charge(s) |
+| 38 | OS | `OS.KERNEL.PROC` | PASS | PASS | inchange | /proc/sys accessible en lecture |
+| 39 | OS | `OS.LIMITS.COREDUMP` | PASS | PASS | inchange | core dump desactive (ulimit -c = 0) |
+| 40 | OS | `OS.LIMITS.NOFILE` | PASS | PASS | inchange | ulimit -n = 1024 |
+| 41 | OS | `OS.LOCALE` | PASS | PASS | inchange | locale operationnelle (LANG=en_US.UTF-8) |
+| 42 | OS | `OS.LOG.AUDITD` | NA | PASS | amelioration | auditd actif |
+| 43 | OS | `OS.LOG.JOURNALD.READ` | PASS | PASS | inchange | journald actif et lisible |
+| 44 | OS | `OS.LOG.RSYSLOG` | NA | NA | inchange | rsyslog absent |
+| 45 | OS | `OS.NET.DNS` | PASS | PASS | inchange | resolution DNS operationnelle |
+| 46 | OS | `OS.NET.LOOPBACK` | PASS | PASS | inchange | interface loopback active |
+| 47 | OS | `OS.NET.PINGLOCAL` | PASS | PASS | inchange | 127.0.0.1 joignable |
+| 48 | OS | `OS.NET.ROUTE` | PASS | PASS | inchange | default via 10.0.2.2 dev vmbr0 proto kernel onlink  |
+| 49 | OS | `OS.PAM.CHAINS` | PASS | PASS | inchange | chaines PAM communes presentes |
+| 50 | OS | `OS.SUDO.WORK` | NA | PASS | amelioration | sudo operationnel (acces root sans mot de passe) |
+| 51 | OS | `OS.SVC.systemd-journald` | PASS | PASS | inchange | systemd-journald actif |
+| 52 | OS | `OS.SVC.systemd-logind` | PASS | PASS | inchange | systemd-logind actif |
+| 53 | OS | `OS.SVC.systemd-timesyncd` | WARN | WARN | inchange | systemd-timesyncd inactif (chrony/systemd-timesyncd non actif ?) |
+| 54 | OS | `OS.SYSCTL.CONFFILES` | NA | PASS | amelioration | 2 fichier(s) de configuration sysctl |
+| 55 | OS | `OS.SYSCTL.FS_PROTECTED_SYMLINKS` | PASS | PASS | inchange | fs.protected_symlinks=1 |
+| 56 | OS | `OS.SYSCTL.FS_SUID_DUMPABLE` | PASS | PASS | inchange | fs.suid_dumpable=0 |
+| 57 | OS | `OS.SYSCTL.KERNEL_DMESG_RESTRICT` | PASS | PASS | inchange | kernel.dmesg_restrict=1 |
+| 58 | OS | `OS.SYSCTL.KERNEL_RANDOMIZE_VA_SPACE` | PASS | PASS | inchange | kernel.randomize_va_space=2 |
+| 59 | OS | `OS.SYSCTL.KERNEL_YAMA_PTRACE_SCOPE` | PASS | WARN | REGRESSION | kernel.yama.ptrace_scope=2 (attendu 1) |
+| 60 | OS | `OS.SYSCTL.NET_IPV4_CONF_ALL_ACCEPT_REDIRECTS` | WARN | PASS | amelioration | net.ipv4.conf.all.accept_redirects=0 |
+| 61 | OS | `OS.SYSCTL.NET_IPV4_ICMP_ECHO_IGNORE_BROADCASTS` | PASS | PASS | inchange | net.ipv4.icmp_echo_ignore_broadcasts=1 |
+| 62 | OS | `OS.SYSCTL.NET_IPV4_TCP_SYNCOOKIES` | PASS | PASS | inchange | net.ipv4.tcp_syncookies=1 |
+| 63 | OS | `OS.SYSTEMD.NOFAILED` | PASS | WARN | REGRESSION | 1 unite(s) systemd en echec |
+| 64 | OS | `OS.SYSTEMD.STATE` | PASS | PASS | inchange | systeme en etat 'degraded' |
+| 65 | OS | `OS.TIME.CLOCK` | PASS | PASS | inchange | date operationnelle (2026-11-12T14:28:32+01:00) |
+| 66 | OS | `OS.TIME.SYNC` | PASS | PASS | inchange | horloge synchronisee (NTP) |
+| 67 | OS | `OS.TIMEZONE` | PASS | PASS | inchange | fuseau horaire : /usr/share/zoneinfo/Europe/Paris |
+| 68 | OS | `OS.USER.NONROOT` | WARN | PASS | amelioration | 1 compte(s) utilisateur(s) avec shell interactif |
+| 69 | OS | `OS.USER.ROOT` | PASS | PASS | inchange | compte root present |
+
+## Tests fonctionnels - synthese par suite (non-regression)
+
+| Suite | Tests | PASS avant | PASS apres | FAIL avant | FAIL apres | Regression |
+|---|---|---|---|---|---|---|
+| Proxmox | 21 | 19 | 19 | 0 | 0 | 0 |
+| OS | 48 | 40 | 44 | 0 | 0 | 2 |
 
