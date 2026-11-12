@@ -1,6 +1,6 @@
-# Deplooiement automatise de la VM PVE 9
+# Deploiement automatise de Proxmox VE 9 sur plusieurs VM
 
-Ce document explique comment le lab de hardening recree une VM Proxmox VE 9
+Ce document explique comment le lab de hardening recree des VM Proxmox VE 9
 **de zero, sans intervention manuelle**, a partir de l'ISO officielle.
 
 ## Principe
@@ -57,6 +57,10 @@ Points importants decouverts a l'usage :
   ce qui corrompt le disque.
 - `root-ssh-keys` installe la cle du lab : l'acces SSH est automatique apres
   le premier demarrage, sans passer par la Web UI.
+- Le disque doit etre visible en **`/dev/sda`**. Sur un controleur **SATA**
+  (AHCI), le disque attache en port 0 apparait bien en `/dev/sda` ; sur un
+  controleur **IDE**, il faut verifier que le port 0 est bien le disque
+  (et non un DVD).
 
 ## Preparation de l'ISO
 
@@ -69,7 +73,7 @@ pip install pycdlib
 python3 - <<'PY'
 import io, shutil, pycdlib
 SRC = "/mnt/c/Users/Louis/Downloads/proxmox-ve_9.2-1.iso"
-OUT = "/mnt/c/Users/Louis/AppData/Local/Temp/opencode/proxmox-auto.iso"
+OUT = "/mnt/c/vbox/pve2-auto.iso"
 shutil.copyfile(SRC, OUT)
 iso = pycdlib.PyCdlib()
 iso.open(OUT)
@@ -78,6 +82,22 @@ iso.add_fp(io.BytesIO(open("/tmp/answer.toml","rb").read()), len(...),
 iso.add_fp(io.BytesIO(open("/tmp/auto-installer-mode.toml","rb").read()), len(...),
            iso_path="/AUTO_INST_TOML;1", rr_name="auto-installer-mode.toml")
 iso.write(OUT + ".new")
+iso.close()
+PY
+```
+
+Verification du contenu (noms Rock Ridge) :
+
+```bash
+python3 - <<'PY'
+import io, pycdlib
+iso = pycdlib.PyCdlib(); iso.open('/mnt/c/vbox/pve2-auto.iso')
+for root, dirs, files in iso.walk(rr_path="/"):
+    for name in files:
+        rp = (root.rstrip("/") + "/" + name)
+        if name.lower() in ("answer.toml", "auto-installer-mode.toml"):
+            buf = io.BytesIO(); iso.get_file_from_iso_fp(rr_path=rp, outfp=buf)
+            print(rp); print(buf.getvalue().decode())
 iso.close()
 PY
 ```
@@ -91,45 +111,33 @@ PY
 | `Invalid IRQ number of the serial port` | syntaxe `--uart1=0x3F8` | `--uart1=0x3F8,4` (base, IRQ) |
 | le VM s'eteint aussitot | registre media incoherent (UUID) | detacher/re-attacher le disque, recreer le VM |
 | `Invalid parameter 'file'` | `--uart-mode1=file,<chemin>` | `--uart-mode1 file <chemin>` (args separes) |
-| **le VM ne redemarre plus apres N restores** | **disques differentiels cumules** | **cloner l'image de reference (`vm-image.ps1`) au lieu de restaurer un snapshot** |
-| `VERR_DISK_FULL` / `Could not create the clone medium` | **disque hote plein** | verifier `Get-PSDrive C` : il faut ~15 Go libres pour cloner un disque PVE de 64 Go |
-
-### Pourquoi le clonage est prefere aux snapshots
-
-Chaque `snapshot restore` empile un disque differentiel (`Snapshots/{uuid}.vdi`).
-Apres plusieurs cycles de restauration, la chaine de disques differentiels
-devient instable : le VM demarre puis s'eteint, ou ne boot plus du tout.
-
-La strategie retenue pour ce lab :
-
-1. **image de reference** = un clone VDI complet de l'etat propre (`reference-base.vdi`) ;
-2. avant chaque cycle, le disque de travail est **reclone** depuis cette image
-   (`vm-image.ps1 -Action Restore`) : le disque est remplace integralement, il n'y
-   a jamais d'accumulation ;
-3. `VBoxManage snapshot ... delete <nom>` fusionne le differentiel dans la base :
-   c'est la seule maniere de reparer un VM casse (verifie dans cette session).
+| **le VM ne redemarre plus apres N restores** | **disques differentiels cumules** | **snapshots (UUID preserve) : ne jamais cloner** |
+| `VERR_DISK_FULL` / `Could not create the clone medium` | **disque hote plein** | verifier `Get-PSDrive C` : il faut ~15 Go libres pour un disque PVE de 64 Go |
+| `createmedium` echoue sans raison claire | medium deja enregistre dans le registre media | detacher le disque (`storageattach ... --medium=none`) **puis** supprimer le fichier, attendre 3 s, recreer |
+| la VM reboot en boucle, le disque ne grossit pas | l'ISO automatise n'est pas monte (media verrouille) ou `boot1=floppy` | `--boot1=dvd --boot2=disk`, verifier `Port 1, Unit 0` |
+| UUID de disque incompatible GRUB | un **clone VDI** porte un UUID different : `Waiting for root device...` | **snapshots uniquement** (l'UUID est preserve) |
 
 ## Regles de disque (cause racine de la plupart des pannes)
 
-Le disque hote doit disposer d'**au moins 15 Go libres** : le disque de travail
-PVE (4,4 Go), l'image de reference (4,4 Go) et le fichier temporaire de clonage
-(4,4 Go) coexistent le temps d'un cycle.
+Le disque hote doit disposer d'**au moins 15 Go libres** par VM deployee
+(disque de travail 4,4 Go + image de reference 4,4 Go + fichier temporaire de
+clonage 4,4 Go coexistent le temps d'un cycle).
 
 ```
 Get-PSDrive C | Select-Object @{n='LibreGo';e={[math]::Round($_.Free/1GB,2)}}
 ```
 
-Si `VERR_DISK_FULL` apparait : `createmedium` et `clonemedium` echouent silencieusement
-ou avec une erreur trompeuse, ce qui donne l'impression que la VM est cassee
-(le VM ne demarre plus, aucune bannière SSH).
+Si `VERR_DISK_FULL` apparait : `createmedium` et `clonemedium` echouent
+silencieusement ou avec une erreur trompeuse, ce qui donne l'impression que la
+VM est cassee (le VM ne demarre plus, aucune banniere SSH).
 
 ## Pourquoi le snapshot est prefere au clonage
 
-Un **clone de disque VDI porte un UUID different** de la source. Or l'installateur
-Proxmox ecrit cet UUID dans la configuration GRUB (`/etc/default/grub`,
-`GRUB_DEVICE_UUID`) et dans `/etc/fstab` : le clone demarre alors sur
-`Waiting for root device...` puis se fige. Symptome : la VM reste `running`
-mais aucune banniere SSH n'arrive, et le disque ne grossit pas.
+Un **clone de disque VDI porte un UUID different** de la source. Or
+l'installateur Proxmox ecrit cet UUID dans la configuration GRUB
+(`/etc/default/grub`, `GRUB_DEVICE_UUID`) et dans `/etc/fstab` : le clone
+demarre alors sur `Waiting for root device...` puis se fige. Symptome : la VM
+reste `running` mais aucune banniere SSH n'arrive, et le disque ne grossit pas.
 
 Un **snapshot conserve l'UUID du disque** : le boot fonctionne parfaitement.
 Seul le differentiel cree par le snapshot grossit (quelques Mo par cycle de
@@ -143,13 +151,13 @@ VBoxManage snapshot proxmox take pristine     # fige l'etat propre
 ```
 
 Si le VM ne redemarre plus apres plusieurs `restore` successifs :
-`VBoxManage snapshot proxmox delete pristine` fusionne le differentiel dans la base
-et rend le disque de nouveau bootable (verifie dans cette session).
+`VBoxManage snapshot proxmox delete pristine` fusionne le differentiel dans la
+base et rend le disque de nouveau bootable (verifie dans cette session).
 
 ## Sequence de deploiement
 
 ```powershell
-# 1. Creer le disque 64 Go et le VM
+# 1. Creer le disque 64 Go et la VM
 VBoxManage createmedium disk --filename "$VMDIR\proxmox.vdi" --size 65536 --format VDI
 VBoxManage createvm --name proxmox --ostype Debian_64 --register --basefolder $VMDIR
 VBoxManage modifyvm proxmox --memory 8192 --cpus 4 --firmware bios --acpi on --ioapic on
@@ -160,7 +168,7 @@ VBoxManage storageattach proxmox --storagectl IDE --port 1 --device 0 --type dvd
 VBoxManage modifyvm proxmox --boot1=dvd --boot2=disk
 VBoxManage modifyvm proxmox --nat-pf1 "pve-web,tcp,127.0.0.1,8006,,8006" --nat-pf2 "pve-ssh,tcp,127.0.0.1,2222,,22"
 
-# 2. Demarrer : l'installateur automatique se declenche (timeout GRUB = 10s)
+# 2. Demarrer : l'installeur automatique se declenche (timeout GRUB = 10s)
 VBoxManage startvm proxmox --type headless
 
 # 3. Attendre la fin (le VM s'eteint : reboot-mode = power-off)
@@ -171,35 +179,39 @@ VBoxManage modifyvm proxmox --boot1=disk --boot2=dvd
 VBoxManage startvm proxmox --type headless
 
 # 5. Snapshot de reference (VM eteinte)
-powershell -File scripts\vm-snapshot.ps1 -Action Create -Name base-propre
+powershell -File scripts\\vm-snapshot.ps1 -Action Create -Name pristine
+```
+
+## Regles NAT (a reappliquer a chaque arret)
+
+Les regles de redirection NAT sont perdues a chaque arret du VM (`poweroff`).
+Les recreer systematiquement **avant** la boucle d'attente SSH :
+
+```powershell
+VBoxManage controlvm proxmox natpf1 delete pve-ssh
+VBoxManage controlvm proxmox natpf1 "pve-ssh,tcp,127.0.0.1,2222,,22"
+VBoxManage controlvm proxmox natpf1 "pve-web,tcp,127.0.0.1,8006,,8006"
 ```
 
 ## Cycle de test
 
 ```powershell
-# Restauration de la base propre (clonage complet de l'image de reference)
-powershell -File scripts\vm-image.ps1 -Action Restore
+# Restauration de la base propre
+powershell -File scripts\\vm-snapshot.ps1 -Action Restore -Name pristine
 VBoxManage startvm proxmox --type headless
 # ... attendre SSH ...
 
 # Baseline + durcissement + rapport
-powershell -File scripts\run-phase.ps1 -Phase all -Target core -Level 1 `
-    -AuditExtra anssi,ceph,cis13 -RunFunc
+powershell -File scripts\\run-phase.ps1 -Phase all -Target core -Level 2 `
+    -AuditExtra anssi,ceph,cis13,communautaire -RunFunc
 ```
-
-> **Important** : les regles de redirection NAT sont perdues a chaque arret du VM
-> (`poweroff`). Les recreer systematiquement :
-> ```powershell
-> VBoxManage controlvm proxmox natpf1 delete pve-ssh
-> VBoxManage controlvm proxmox natpf1 "pve-ssh,tcp,127.0.0.1,2222,,22"
-> VBoxManage controlvm proxmox natpf1 "pve-web,tcp,127.0.0.1,8006,,8006"
-> ```
 
 ## Scripts annexes
 
 | Fichier | Role |
 |---|---|
 | `scripts/ssh-tool.py` | wrapper SSH/SFTP via paramiko (contourne les problemes de `ssh.exe` sous PowerShell) |
-| `scripts/vm-image.ps1` | sauvegarde/restauration de l'image de reference par **clonage complet** du disque (plus fiable que les snapshots differentiels) |
+| `scripts/vm-image.ps1` | sauvegarde/restauration de l'image de reference par **clonage complet** du disque |
 | `guest/reset-pristine.sh` | retour a l'etat propre (annule le hardening) |
-| `guest/func-test-pve.sh` | tests fonctionnels de non-regression Proxmox |
+| `guest/func-test-pve.sh` | tests fonctionnels de non-regression Proxmox (21 tests) |
+| `guest/func-test-os.sh` | tests fonctionnels de non-regression OS (48 tests) |
