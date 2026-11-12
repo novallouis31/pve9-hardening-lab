@@ -92,6 +92,7 @@ PY
 | le VM s'eteint aussitot | registre media incoherent (UUID) | detacher/re-attacher le disque, recreer le VM |
 | `Invalid parameter 'file'` | `--uart-mode1=file,<chemin>` | `--uart-mode1 file <chemin>` (args separes) |
 | **le VM ne redemarre plus apres N restores** | **disques differentiels cumules** | **cloner l'image de reference (`vm-image.ps1`) au lieu de restaurer un snapshot** |
+| `VERR_DISK_FULL` / `Could not create the clone medium` | **disque hote plein** | verifier `Get-PSDrive C` : il faut ~15 Go libres pour cloner un disque PVE de 64 Go |
 
 ### Pourquoi le clonage est prefere aux snapshots
 
@@ -107,6 +108,43 @@ La strategie retenue pour ce lab :
    a jamais d'accumulation ;
 3. `VBoxManage snapshot ... delete <nom>` fusionne le differentiel dans la base :
    c'est la seule maniere de reparer un VM casse (verifie dans cette session).
+
+## Regles de disque (cause racine de la plupart des pannes)
+
+Le disque hote doit disposer d'**au moins 15 Go libres** : le disque de travail
+PVE (4,4 Go), l'image de reference (4,4 Go) et le fichier temporaire de clonage
+(4,4 Go) coexistent le temps d'un cycle.
+
+```
+Get-PSDrive C | Select-Object @{n='LibreGo';e={[math]::Round($_.Free/1GB,2)}}
+```
+
+Si `VERR_DISK_FULL` apparait : `createmedium` et `clonemedium` echouent silencieusement
+ou avec une erreur trompeuse, ce qui donne l'impression que la VM est cassee
+(le VM ne demarre plus, aucune bannière SSH).
+
+## Pourquoi le snapshot est prefere au clonage
+
+Un **clone de disque VDI porte un UUID different** de la source. Or l'installateur
+Proxmox ecrit cet UUID dans la configuration GRUB (`/etc/default/grub`,
+`GRUB_DEVICE_UUID`) et dans `/etc/fstab` : le clone demarre alors sur
+`Waiting for root device...` puis se fige. Symptome : la VM reste `running`
+mais aucune banniere SSH n'arrive, et le disque ne grossit pas.
+
+Un **snapshot conserve l'UUID du disque** : le boot fonctionne parfaitement.
+Seul le differentiel cree par le snapshot grossit (quelques Mo par cycle de
+durcissement), ce qui reste tres acceptable.
+
+Workflow retenu :
+
+```
+VBoxManage snapshot proxmox take pristine     # fige l'etat propre
+... cycle : restore pristine -> boot -> baseline -> apply -> verify ...
+```
+
+Si le VM ne redemarre plus apres plusieurs `restore` successifs :
+`VBoxManage snapshot proxmox delete pristine` fusionne le differentiel dans la base
+et rend le disque de nouveau bootable (verifie dans cette session).
 
 ## Sequence de deploiement
 

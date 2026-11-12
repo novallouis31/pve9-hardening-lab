@@ -2,25 +2,27 @@
 
 Cible : VM VirtualBox locale `pve` (PVE 9.2.2, Debian 13, noyau 7.0.2-6-pve, ext4).
 
-Collecteurs (lecture seule, 111 controles au total) :
-- `guest/audit-pve.sh` — controles PVE / CIS de base
-- `guest/audit-cis13.sh` — controles CIS Debian 13 officiels (IDs et seuils du referentiel)
-- `guest/audit-anssi.sh` — controles ANSSI
-- `guest/audit-ceph.sh` — controles Ceph
+Collecteurs (lecture seule, **111 controles** au total) :
+- `guest/audit-pve.sh` — controles PVE / CIS de base (87)
+- `guest/audit-cis13.sh` — controles CIS Debian 13 officiels, IDs du referentiel (19)
+- `guest/audit-anssi.sh` — controles ANSSI (14)
+- `guest/audit-ceph.sh` — controles Ceph (11)
 
 Test fonctionnel : `guest/func-test-pve.sh` (21 tests de non-regression PVE).
 
 ## Resultats
 
-| Rapport | Perimetre | PASS avant | PASS apres | Delta | Compliance | Regressions |
+| Rapport | Perimetre | PASS avant | PASS apres | Delta | Regressions | Reg. fonctionnelles |
 |---|---|---:|---:|---:|---:|---:|
-| [rapport-CIS-Level1.pdf](rapport-CIS-Level1.pdf) | CIS Debian 13 Level 1 + guide PVE 9 | 34 | 84 | **+50** | **89,4 %** | 0 |
-| [rapport-CIS-Level2.pdf](rapport-CIS-Level2.pdf) | + FORWARD DROP/nftables, auditd, rkhunter | | | | | 0 |
-| [rapport-ANSSI-Level3.pdf](rapport-ANSSI-Level3.pdf) | ANSSI niveau 3 (AIDE, rsyslog, SSH root=no) | | | | | 0 |
-| [rapport-Ceph.pdf](rapport-Ceph.pdf) | cephx, msgr2, permissions | | | | | 0 |
+| [rapport-CIS-Level1.pdf](rapport-CIS-Level1.pdf) | CIS Debian 13 Level 1 + guide PVE 9 | 34 | **84** | **+50** | 0 | 0 |
+| [rapport-CIS-Level2.pdf](rapport-CIS-Level2.pdf) | + politique FORWARD DROP / nftables | 33 | 84 | +51 | 0 | 0 |
+| [rapport-delta-L1-vers-L2.pdf](rapport-delta-L1-vers-L2.pdf) | Ce qu'apporte le niveau 2 | 84 | 85 | +1 | 0 | 0 |
+| [rapport-ANSSI-Level3.pdf](rapport-ANSSI-Level3.pdf) | ANSSI niveau 3 (AIDE, rsyslog, SSH root=no) | 34 | 43 | +9 | 0 | 0 |
+| [rapport-Ceph.pdf](rapport-Ceph.pdf) | cephx, msgr2, permissions | 34 | 39 | +5 | 0 | 0 |
 
-Sur le perimetre strict **CIS Level 1, la conformite atteint 100 %** des controles
-CIS/OS/PVE/USR. Les controles restants en echec (`ANS.*`, `CEPH.*`) relevent
+**Compliance CIS Level 1 : 89,4 %** (84/94 controles evaluables).
+Sur le perimetre strict **CIS / OS / PVE / USR, la conformite atteint 100 %** : les
+10 controles restants en echec sont `ANS.*` (6) et `CEPH.*` (4), qui relevent
 d'autres guides et sont appliques par leurs propres niveaux.
 
 ## Contenu de chaque rapport
@@ -40,7 +42,7 @@ destruction d'un conteneur LXC de test**, depot de fichiers (pveam), certificat
 TLS, journalisation.
 
 **Resultat : 19 PASS / 0 FAIL avant ET apres le durcissement, 0 regression
-fonctionnelle sur tous les cycles.**
+fonctionnelle sur l'ensemble des cycles.**
 
 ## Points cles
 
@@ -50,8 +52,8 @@ fonctionnelle sur tous les cycles.**
   Ceph sans cluster local.
 - Chaque modification machine est tracable jusqu'a la recommandation du guide
   PVE 9 / CIS Debian 13 via la reference de controle inscrite dans le script.
-- Rollback : `/root/rollback-hardening.sh` genere sur le noeud, plus l'image de
-  reference VirtualBox `base-propre` (restauration par clonage complet du disque).
+- Rollback : `/root/rollback-hardening.sh` genere sur le noeud, plus le snapshot
+  VirtualBox `pristine` (restauration de la base saine entre deux cycles).
 
 ## Sources de reference
 
@@ -69,8 +71,8 @@ fonctionnelle sur tous les cycles.**
 # Niveau 1 (par defaut)
 powershell -File scripts\run-phase.ps1 -Phase apply -Target core -Level 1
 # Niveau 2 / ANSSI 3 / Ceph
-powershell -File scripts\run-phase.ps1 -Phase apply -Target core   -Level 2
-powershell -File scripts\run-phase.ps1 -Phase apply -Target anssi  -Level 3
+powershell -File scripts\run-phase.ps1 -Phase apply -Target core  -Level 2
+powershell -File scripts\run-phase.ps1 -Phase apply -Target anssi -Level 3
 powershell -File scripts\run-phase.ps1 -Phase apply -Target ceph
 ```
 

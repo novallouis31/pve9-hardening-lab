@@ -1,23 +1,28 @@
 ﻿# Delta CIS L1 vers L2 - Proxmox VE 9
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-065646`
-- **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-072451`
-- **Genere le** : 2026-11-12 07:37:51
+- **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-120544`
+- **Genere le** : 2026-11-12 12:25:53
 
 ## Synthese
 
 | Indicateur | Avant | Apres | Delta |
 |---|---:|---:|---:|
-| Controles conformes (PASS) | 84 | 84 | +0 |
-| Controles en echec (FAIL) | 10 | 11 | +(-0) |
+| Controles conformes (PASS) | 84 | 85 | +1 |
+| Controles en echec (FAIL) | 10 | 10 | (-1) |
 | Regressions | - | 0 | |
-| Ameliorations | - | 0 | |
+| Ameliorations | - | 1 | |
+
+## Ameliorations
+
+| Controle | Avant | Apres | Detail |
+|---|---|---|---|
+| `PVE.FW.FORWARD` | NA | PASS | politique INPUT/FORWARD = DROP (enable: 1;policy_in: DROP;policy_out: ACCEPT;) |
 
 ## Controles en echec restants (apres)
 
 | Controle | Statut | Detail |
 |---|---|---|
-| `PVE.FW.FORWARD` | FAIL | politique FORWARD non DROP (enable: 1;) |
 | `ANS.AIDE.INSTALLED` | FAIL | aide absent |
 | `ANS.AIDE.DB` | FAIL | base AIDE absente (aide --init non lance) |
 | `ANS.RSYSLOG.REMOTE` | FAIL | aucun transfert distant (centralisation des journaux non configuree) |
@@ -97,7 +102,7 @@
 | 62 | `OS.MOD.hfsplus` | PASS | PASS | inchange | module hfsplus neutralise |
 | 63 | `OS.MOD.jffs2` | PASS | PASS | inchange | module jffs2 neutralise |
 | 64 | `OS.MOUNT._dev_shm` | PASS | PASS | inchange | /dev/shm opts=rw,nosuid,nodev,noexec,inode64 |
-| 65 | `OS.MOUNT._tmp` | PASS | PASS | inchange | /tmp opts=rw,nosuid,nodev,size=4065212k,nr_inodes=1048576,inode64 |
+| 65 | `OS.MOUNT._tmp` | PASS | PASS | inchange | /tmp opts=rw,nosuid,nodev,nr_inodes=1048576,inode64 |
 | 66 | `OS.MOUNT._var_tmp` | PASS | PASS | inchange | /var/tmp opts=rw,nosuid,nodev,noexec,relatime,size=524288k,inode64 |
 | 67 | `OS.NETMOD.atm` | PASS | PASS | inchange | module atm neutralise |
 | 68 | `OS.NETMOD.can` | PASS | PASS | inchange | module can neutralise |
@@ -136,7 +141,7 @@
 | 101 | `PVE.F2B.GUI` | PASS | PASS | inchange | fail2ban protege l'interface web Proxmox |
 | 102 | `PVE.F2B.PKG` | PASS | PASS | inchange | fail2ban installe |
 | 103 | `PVE.FW.CLUSTER` | PASS | PASS | inchange | /etc/pve/firewall/cluster.fw present |
-| 104 | `PVE.FW.FORWARD` | NA | FAIL | modifie | politique FORWARD non DROP (enable: 1;) |
+| 104 | `PVE.FW.FORWARD` | NA | PASS | amelioration | politique INPUT/FORWARD = DROP (enable: 1;policy_in: DROP;policy_out: ACCEPT;) |
 | 105 | `PVE.GUI.CERT` | INFO | INFO | inchange | certificat GUI absent ou a renouveler |
 | 106 | `PVE.LXC.UNPRIV` | NA | NA | inchange | aucun conteneur LXC |
 | 107 | `SYS.01` | INFO | INFO | inchange | Debian=13 PVE=(running |
