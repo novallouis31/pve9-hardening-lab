@@ -91,6 +91,22 @@ PY
 | `Invalid IRQ number of the serial port` | syntaxe `--uart1=0x3F8` | `--uart1=0x3F8,4` (base, IRQ) |
 | le VM s'eteint aussitot | registre media incoherent (UUID) | detacher/re-attacher le disque, recreer le VM |
 | `Invalid parameter 'file'` | `--uart-mode1=file,<chemin>` | `--uart-mode1 file <chemin>` (args separes) |
+| **le VM ne redemarre plus apres N restores** | **disques differentiels cumules** | **cloner l'image de reference (`vm-image.ps1`) au lieu de restaurer un snapshot** |
+
+### Pourquoi le clonage est prefere aux snapshots
+
+Chaque `snapshot restore` empile un disque differentiel (`Snapshots/{uuid}.vdi`).
+Apres plusieurs cycles de restauration, la chaine de disques differentiels
+devient instable : le VM demarre puis s'eteint, ou ne boot plus du tout.
+
+La strategie retenue pour ce lab :
+
+1. **image de reference** = un clone VDI complet de l'etat propre (`reference-base.vdi`) ;
+2. avant chaque cycle, le disque de travail est **reclone** depuis cette image
+   (`vm-image.ps1 -Action Restore`) : le disque est remplace integralement, il n'y
+   a jamais d'accumulation ;
+3. `VBoxManage snapshot ... delete <nom>` fusionne le differentiel dans la base :
+   c'est la seule maniere de reparer un VM casse (verifie dans cette session).
 
 ## Sequence de deploiement
 
@@ -123,8 +139,8 @@ powershell -File scripts\vm-snapshot.ps1 -Action Create -Name base-propre
 ## Cycle de test
 
 ```powershell
-# Restauration de la base propre
-powershell -File scripts\vm-snapshot.ps1 -Action Restore -Name base-propre
+# Restauration de la base propre (clonage complet de l'image de reference)
+powershell -File scripts\vm-image.ps1 -Action Restore
 VBoxManage startvm proxmox --type headless
 # ... attendre SSH ...
 
@@ -132,6 +148,14 @@ VBoxManage startvm proxmox --type headless
 powershell -File scripts\run-phase.ps1 -Phase all -Target core -Level 1 `
     -AuditExtra anssi,ceph,cis13 -RunFunc
 ```
+
+> **Important** : les regles de redirection NAT sont perdues a chaque arret du VM
+> (`poweroff`). Les recreer systematiquement :
+> ```powershell
+> VBoxManage controlvm proxmox natpf1 delete pve-ssh
+> VBoxManage controlvm proxmox natpf1 "pve-ssh,tcp,127.0.0.1,2222,,22"
+> VBoxManage controlvm proxmox natpf1 "pve-web,tcp,127.0.0.1,8006,,8006"
+> ```
 
 ## Scripts annexes
 
