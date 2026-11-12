@@ -115,8 +115,9 @@ elif ACTION == 'put':
                 REMOTE_PATH, local_size, local_sha[:16], rsize, (rsha or '')[:16], err))
         client.close()
         sys.exit(1)
-    sys.stderr.write("put OK : {} ({} octets, sha {})\n".format(
-        REMOTE_PATH, local_size, local_sha[:16]))
+    # Message de succes sur stdout : sur stderr, PowerShell 5.1 le
+    # convertirait en erreur bloquante (ErrorActionPreference = Stop).
+    print("put OK : {} ({} octets, sha {})".format(REMOTE_PATH, local_size, local_sha[:16]))
     client.close()
     sys.exit(0)
 
