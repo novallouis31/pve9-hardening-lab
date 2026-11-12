@@ -6,3 +6,5 @@ vendor/
 artifacts/
 reports/*.html
 
+__pycache__/
+*.pyc
