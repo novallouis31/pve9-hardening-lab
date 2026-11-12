@@ -237,8 +237,11 @@ $mdTables['Recapitulatif complet - tous les controles'] = $t
 
 # ------------------------------------------------- tableau des tests fonctionnels
 if ($funcBefore.Count -and $funcAfter.Count) {
+    # Ventilation par suite : les tests PVE (FUNC.*) et les tests OS (OS.*)
+    # sont traces separement pour montrer que le durcissement ne casse ni
+    # Proxmox ni le systeme d'exploitation lui-meme.
     $t = [System.Collections.ArrayList]@()
-    [void]$t.Add(@('#','Test fonctionnel','Avant','Apres','Evolution','Detail (apres)'))
+    [void]$t.Add(@('#','Suite','Test fonctionnel','Avant','Apres','Evolution','Detail (apres)'))
     $i = 0
     foreach ($id in ($funcAfter.Keys | Sort-Object)) {
         $i++
@@ -248,9 +251,29 @@ if ($funcBefore.Count -and $funcAfter.Count) {
                 elseif ($bs -eq 'PASS' -and $a.Status -ne 'PASS') { 'REGRESSION' }
                 elseif ($bs -ne 'PASS' -and $a.Status -eq 'PASS') { 'amelioration' }
                 else { 'modifie' }
-        [void]$t.Add(@("$i", "``$id``", $bs, $a.Status, $evol, $a.Detail))
+        $suite = if ($id -like 'OS.*') { 'OS' } else { 'Proxmox' }
+        [void]$t.Add(@("$i", $suite, "``$id``", $bs, $a.Status, $evol, $a.Detail))
     }
     $mdTables['Tests fonctionnels - avant / apres durcissement'] = $t
+
+    # Tableau de synthese par suite
+    $t = [System.Collections.ArrayList]@()
+    [void]$t.Add(@('Suite','Tests','PASS avant','PASS apres','FAIL avant','FAIL apres','Regression'))
+    foreach ($suite in @('Proxmox', 'OS')) {
+        $ids = @($funcAfter.Keys | Where-Object {
+            if ($suite -eq 'OS') { $_ -like 'OS.*' } else { $_ -notlike 'OS.*' }
+        })
+        if ($ids.Count -eq 0) { continue }
+        $pb2 = @($ids | Where-Object { $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'PASS' }).Count
+        $pa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'PASS' }).Count
+        $fb2 = @($ids | Where-Object { $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'FAIL' }).Count
+        $fa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'FAIL' }).Count
+        $rg2 = @($ids | Where-Object {
+            $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'PASS' -and $funcAfter[$_].Status -ne 'PASS'
+        }).Count
+        [void]$t.Add(@($suite, $ids.Count, $pb2, $pa2, $fb2, $fa2, $rg2))
+    }
+    $mdTables['Tests fonctionnels - synthese par suite (non-regression)'] = $t
 }
 
 # ------------------------------------------------------------------- rendu MD
@@ -274,6 +297,18 @@ if ($funcBefore.Count -and $funcAfter.Count) {
     $fap = @($funcAfter.Values  | Where-Object { $_.Status -eq 'PASS' }).Count
     $md += "| Tests fonctionnels PASS | $fbp | $fap | $(if ($fap -ge $fbp) { '+' } else { '' })$($fap - $fbp) |"
     $md += "| Regressions fonctionnelles | - | $funcRegression | |"
+    # Ventilation Proxmox / OS dans la synthese
+    foreach ($suite in @('Proxmox', 'OS')) {
+        $ids = @($funcAfter.Keys | Where-Object {
+            if ($suite -eq 'OS') { $_ -like 'OS.*' } else { $_ -notlike 'OS.*' }
+        })
+        if ($ids.Count -eq 0) { continue }
+        $pb2 = @($ids | Where-Object { $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'PASS' }).Count
+        $pa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'PASS' }).Count
+        $fa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'FAIL' }).Count
+        $md += "| Tests fonctionnels $suite (PASS / total) | $pb2 / $($ids.Count) | $pa2 / $($ids.Count) | $(if ($pa2 -ge $pb2) { '+' } else { '' })$($pa2 - $pb2) |"
+        $md += "| Tests fonctionnels $suite (FAIL) | - | $fa2 | |"
+    }
 }
 $md += ""
 foreach ($k in $mdTables.Keys) {
@@ -368,6 +403,19 @@ if ($funcBefore.Count -and $funcAfter.Count) {
     $fd = $fap - $fbp
     $sumHtml += "<div><div class=""v $(if ($fd -ge 0) { 'good' } else { 'bad' })"">$fbp &rarr; $fap</div><div class=""l"">Tests fonctionnels PASS</div></div>"
     $sumHtml += "<div><div class=""v $(if ($funcRegression) { 'bad' } else { 'good' })"">$funcRegression</div><div class=""l"">Regr. fonctionnelles</div></div>"
+    # KPI dedies : le durcissement ne doit pas casser Proxmox NI l'OS
+    foreach ($suite in @('Proxmox', 'OS')) {
+        $ids = @($funcAfter.Keys | Where-Object {
+            if ($suite -eq 'OS') { $_ -like 'OS.*' } else { $_ -notlike 'OS.*' }
+        })
+        if ($ids.Count -eq 0) { continue }
+        $pb2 = @($ids | Where-Object { $funcBefore.Contains($_) -and $funcBefore[$_].Status -eq 'PASS' }).Count
+        $pa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'PASS' }).Count
+        $fa2 = @($ids | Where-Object { $funcAfter[$_].Status -eq 'FAIL' }).Count
+        $cls = if ($fa2 -eq 0) { 'good' } else { 'bad' }
+        $lbl = if ($suite -eq 'OS') { 'Non-regression OS' } else { 'Non-regression Proxmox' }
+        $sumHtml += "<div><div class=""v $cls"">$pa2/$($ids.Count)</div><div class=""l"">$lbl</div></div>"
+    }
 }
 $sumHtml += "</div>"
 

@@ -23,6 +23,10 @@ DRY_RUN="${DRY_RUN:-0}"
 LEVEL="${LEVEL:-1}"
 # Sous-reseau de management (NAT VirtualBox) : autorise le root SSH par cle.
 MGMT_CIDR="${MGMT_CIDR:-10.0.2.0/24}"
+# Compte d'administration cree par apply-homesec-core.sh : il doit figurer
+# dans AllowUsers, sinon le fichier SSH produit par l'ANSSI priverait ce
+# compte de son acces (le contenu doit etre identique a celui du core).
+ADMIN_USER="${ADMIN_USER:-pveadmin}"
 TS="$(date +%Y%m%d_%H%M%S)"
 BACKUP_DIR="/root/anssi-backups/$TS"
 LOG="/var/log/anssi-$TS.log"
@@ -285,7 +289,15 @@ ref "Guide PVE 9 option B + harbian 9.3.8 (deviation documentee)"
 if [ "$DRY_RUN" != "1" ]; then
   SSHD_DROP=/etc/ssh/sshd_config.d/00-pve-hardening.conf
   backup "$SSHD_DROP"
-  write_file "$SSHD_DROP" 0600 "\
+  # Contenu IDENTIQUE a celui d'apply-homesec-core.sh : quel que soit l'ordre
+  # d'application des deux scripts, le resultat final est le meme.
+  # Liste AllowUsers : on n'annonce que des comptes reellement presents,
+# sinon 'sshd -t' echoue et la configuration SSH serait rejetee.
+ALLOW_USERS="root"
+if getent passwd "$ADMIN_USER" >/dev/null 2>&1; then
+    ALLOW_USERS="root $ADMIN_USER"
+fi
+write_file "$SSHD_DROP" 0600 "\
 # Genere par apply-anssi.sh - ANSSI BP-028 niveau R
 # Root SSH restreint au reseau de management (guide PVE 9, option B)
 PermitRootLogin no
@@ -302,7 +314,7 @@ ClientAliveCountMax 2
 MaxSessions 5
 MaxStartups 10:30:60
 Banner /etc/issue.net
-AllowUsers root
+AllowUsers $ALLOW_USERS
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
 KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256

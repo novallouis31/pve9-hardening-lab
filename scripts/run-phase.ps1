@@ -167,33 +167,63 @@ function Invoke-FuncTest {
     param([string]$Label)
 
     Assert-Ssh
-    Copy-ToGuest (Join-Path $guestDir 'func-test-pve.sh') '/root/func-test-pve.sh'
-    Invoke-Ssh -Command 'chmod +x /root/func-test-pve.sh' | Out-Null
+
+    # Deux suites de tests fonctionnels :
+    #   - func-test-pve.sh : le durcissement ne casse pas Proxmox
+    #   - func-test-os.sh  : le durcissement ne casse pas l'OS lui-meme
+    #     (systemd, sysctl, montages, DNS, PAM, cron, dpkg, journalisation...)
+    $suites = @(
+        @{ Guest = 'func-test-pve.sh'; Remote = '/root/func-test-pve.sh'; Pattern = 'fonctionnel-'; Tag = 'PVE' },
+        @{ Guest = 'func-test-os.sh';  Remote = '/root/func-test-os.sh';  Pattern = 'fonctionnel-os-'; Tag = 'OS' }
+    )
 
     $remote = "/tmp/func-$Label"
-    Write-Host "  tests fonctionnels ($Label)..." -ForegroundColor DarkGray
-    # Le code de sortie est le nombre d'echecs : on ne le considere pas comme fatal
-    $res = Invoke-Ssh -Command "bash /root/func-test-pve.sh $remote"
-    $failures = @($res.Out -split "`n" | Where-Object { $_ -match '^@@TEST\s+\S+\s+FAIL' }).Count
-
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $dir = Join-Path $artifacts "func-$Label-$stamp"
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $local = Join-Path $dir 'fonctionnel.txt'
     $py = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
     $tool = Join-Path $scriptDir 'ssh-tool.py'
-    # Le rapport porte un nom horodate : on le recupere via ls puis on le telecharge.
-    $ls = Invoke-Ssh -Command "ls -1 $remote 2>/dev/null | grep 'fonctionnel.*\.txt' | head -1"
-    $remoteFile = ($ls.Out -split "`n" | Where-Object { $_ -match 'fonctionnel.*\.txt' } | Select-Object -First 1)
-    if ($remoteFile) {
-        $remoteFile = $remoteFile.Trim()
-        $gargs = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/$remoteFile", $local)
-        & $py $tool @gargs 2>&1 | Out-Null
-        if (-not (Test-Path $local)) { Write-Warning "Telechargement du rapport fonctionnel echoue." }
-    } else {
-        Write-Warning "Aucun rapport fonctionnel trouve dans $remote"
+
+    $totalFail = 0
+    $combined = New-Object System.Collections.ArrayList
+
+    foreach ($suite in $suites) {
+        $localSuite = Join-Path $guestDir $suite.Guest
+        if (-not (Test-Path $localSuite)) {
+            Write-Warning "Suite de tests absente : $($suite.Guest)"
+            continue
+        }
+        Copy-ToGuest $localSuite $suite.Remote | Out-Null
+        Invoke-Ssh -Command "chmod +x $($suite.Remote)" | Out-Null
+
+        Write-Host ("  tests fonctionnels {0} ({1})..." -f $suite.Tag, $Label) -ForegroundColor DarkGray
+        # Le code de sortie est le nombre d'echecs : on ne le considere pas comme fatal
+        $res = Invoke-Ssh -Command "bash $($suite.Remote) $remote"
+        $failures = @($res.Out -split "`n" | Where-Object { $_ -match '^@@TEST\s+\S+\s+FAIL' }).Count
+        $totalFail += $failures
+
+        # On recupere le rapport horodate pour l'archiver
+        $ls = Invoke-Ssh -Command "ls -1 $remote 2>/dev/null | grep '$($suite.Pattern).*\.txt' | head -1"
+        $remoteFile = ($ls.Out -split "`n" | Where-Object { $_ -match '\.txt$' } | Select-Object -First 1)
+        if ($remoteFile) {
+            $remoteFile = $remoteFile.Trim()
+            $gargs = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/$remoteFile", (Join-Path $dir "$($suite.Tag)-$remoteFile"))
+            & $py $tool @gargs 2>&1 | Out-Null
+        }
+
+        # Rapport unifie : on concatene les lignes @@TEST des deux suites
+        [void]$combined.Add("===== SUITE $($suite.Tag) =====")
+        foreach ($line in ($res.Out -split "`n")) {
+            if ($line -match '^@@TEST\s+') { [void]$combined.Add($line) }
+        }
+        [void]$combined.Add("")
+
+        Write-Host ("    {0} : {1} echec(s)" -f $suite.Tag, $failures) -ForegroundColor $(if ($failures) { 'Yellow' } else { 'Green' })
     }
-    Write-Host ("  rapport fonctionnel : {0} ({1} echec(s))" -f $local, $failures) -ForegroundColor $(if ($failures) { 'Yellow' } else { 'Green' })
+
+    $combined -join "`n" | Set-Content -Path $local -Encoding UTF8
+    Write-Host ("  rapport fonctionnel : {0} ({1} echec(s))" -f $local, $totalFail) -ForegroundColor $(if ($totalFail) { 'Yellow' } else { 'Green' })
     return $local
 }
 

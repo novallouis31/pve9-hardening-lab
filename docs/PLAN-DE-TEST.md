@@ -70,9 +70,26 @@ powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase baseline
 ```
 
 Deploie `guest/audit-pve.sh` (lecture seule) et recupere `artifacts/baseline-<ts>/`
-contenant `audit.txt` et `checks.tsv`. Environ 60 controles objectifs (CIS Debian 13,
-guide PVE 9, STIG) codes `PASS|FAIL|NA|INFO`. **Sans ce baseline, aucune conclusion
-avant/apres n'est possible.**
+contenant `audit.txt` et `checks.tsv`. **129 controles objectifs** (CIS Debian 13,
+guide PVE 9, ANSSI BP-028, Ceph, controles communautaires) codes
+`PASS|FAIL|NA|INFO`. **Sans ce baseline, aucune conclusion avant/apres n'est
+possible.**
+
+Avec `-RunFunc`, deux suites de tests fonctionnels sont executees et archivees :
+
+| Suite | Script | Objet | Tests |
+|---|---|---|---|
+| Proxmox | `guest/func-test-pve.sh` | le durcissement ne casse **pas Proxmox** | Web UI, API, SSH par cle, services critiques, pare-feu, stockage, reseau, cycle de vie LXC, pveam, TLS, journalisation |
+| OS | `guest/func-test-os.sh` | le durcissement ne casse **pas l'OS** | systemd, sysctl, montages/options, espace disque, DNS/routage, PAM, sudo, comptes, cron, journald/rsyslog/auditd, AppArmor, dpkg/apt, noyau/limites, horloge |
+
+Les deux suites produisent un rapport **unifie** (`artifacts/func-<label>-<ts>/fonctionnel.txt`)
+et les resultats sont traces dans le PDF avec une ventilation par suite
+(« Tests fonctionnels - synthese par suite (non-regression) »), ce qui permet de
+verifier separement que **Proxmox ET l'OS** fonctionnent toujours apres hardening.
+
+La suite OS est indispensable : un durcissement peut laisser Proxmox intact tout en
+casseant l'OS (sysctl incoherent, PAM corrompu, cron bloque, journalisation perdue),
+ce que les seuls tests Proxmox ne detecteraient pas.
 
 ### Etape 5 — Faire un snapshot
 

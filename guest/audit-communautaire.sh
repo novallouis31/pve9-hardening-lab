@@ -40,7 +40,16 @@ sysctl_ok net.ipv4.conf.all.send_redirects 0
 sysctl_ok net.ipv4.conf.default.send_redirects 0
 sysctl_ok net.ipv4.icmp_echo_ignore_broadcasts 1
 sysctl_ok net.ipv4.tcp_syncookies 1
-sysctl_ok net.ipv4.conf.all.rp_filter 1
+# rp_filter : 1 (loose) ou 2 (strict). Debian 13 utilise 2, qui est PLUS
+# strict que 1 : les deux valeurs sont conformes (harbian 7.2.x).
+for iface in all default; do
+    v=$(sysctl -n "net.ipv4.conf.${iface}.rp_filter" 2>/dev/null | head -n1)
+    if [ "$v" = "1" ] || [ "$v" = "2" ]; then
+        chk "COMM.SYSCTL.NET_IPV4_CONF_${iface}_RP_FILTER" PASS "rp_filter=$v (1=loose, 2=strict)"
+    else
+        chk "COMM.SYSCTL.NET_IPV4_CONF_${iface}_RP_FILTER" FAIL "rp_filter=${v:-?} (attendu 1 ou 2)"
+    fi
+done
 sysctl_ok net.ipv6.conf.all.accept_redirects 0
 sysctl_ok net.ipv6.conf.all.accept_ra 0
 
@@ -85,13 +94,23 @@ fi
 # -----------------------------------------------------------------------------
 # Permissions des journaux (harbian 8.5, 8.2.3)
 # -----------------------------------------------------------------------------
+# Repertoires : les modes 2755 (setgid, standard Debian pour /var/log/journal)
+# sont acceptes. Seuls les FICHIERS de journaux doivent etre en 640/600/644.
 bad_logs=""
 for d in /var/log /var/log/journal /var/log/syslog; do
     [ -e "$d" ] || continue
     p=$(stat -c '%a' "$d" 2>/dev/null)
     case "$p" in
-        750|700|755|644|640) : ;;
+        750|700|755|644|640|2755|2750|1777) : ;;
         *) bad_logs="$bad_logs $d($p)" ;;
+    esac
+done
+for f in /var/log/syslog /var/log/auth.log /var/log/messages; do
+    [ -f "$f" ] || continue
+    p=$(stat -c '%a' "$f" 2>/dev/null)
+    case "$p" in
+        640|600|644|660) : ;;
+        *) bad_logs="$bad_logs $f($p)" ;;
     esac
 done
 if [ -z "$bad_logs" ]; then
@@ -189,12 +208,16 @@ fi
 # Mot de passe : methode de hachage (harbian 10.1.4)
 # -----------------------------------------------------------------------------
 if [ -f /etc/shadow ]; then
+    # Debian 13 utilise yescrypt ($y$) par defaut ; SHA-512 ($6$) est
+    # egalement accepte. Seuls les hashs reellement obsoletes sont signales.
     nsha512=$(awk -F: '$2 ~ /^\$6\$/ {c++} END{print c+0}' /etc/shadow 2>/dev/null)
+    nyescrypt=$(awk -F: '$2 ~ /^\$y\$/ {c++} END{print c+0}' /etc/shadow 2>/dev/null)
     nlegacy=$(awk -F: '$2 ~ /^\$(1|2|3|4|5)\$/ {c++} END{print c+0}' /etc/shadow 2>/dev/null)
-    if [ "${nlegacy:-0}" -eq 0 ] && [ "${nsha512:-0}" -gt 0 ]; then
-        chk "COMM.PASSWD.HASH" PASS "$nsha512 hash(s) SHA-512, aucun hash obsolete"
+    nmodern=$(( nsha512 + nyescrypt ))
+    if [ "${nlegacy:-0}" -eq 0 ] && [ "${nmodern:-0}" -gt 0 ]; then
+        chk "COMM.PASSWD.HASH" PASS "$nmodern hash(s) moderne(s) (yescrypt=$nyescrypt sha512=$nsha512), 0 obsolete"
     else
-        chk "COMM.PASSWD.HASH" FAIL "$nlegacy hash(s) obsolete(s) (SHA-512 : $nsha512)"
+        chk "COMM.PASSWD.HASH" FAIL "$nlegacy hash(s) obsolete(s) (yescrypt=$nyescrypt sha512=$nsha512)"
     fi
 fi
 

@@ -300,6 +300,12 @@ SSHD_DROP=/etc/ssh/sshd_config.d/00-pve-hardening.conf
 # reellement la recommandation ANSSI BP-028 tout en conservant l'acces du lab.
 # Le fichier produit est identique a celui d'apply-anssi.sh (pas de conflit
 # quel que soit l'ordre d'application des scripts).
+# Liste AllowUsers : on n'annonce que des comptes reellement presents,
+# sinon 'sshd -t' echoue et la configuration SSH serait rejetee.
+ALLOW_USERS="root"
+if getent passwd "$ADMIN_USER" >/dev/null 2>&1; then
+    ALLOW_USERS="root $ADMIN_USER"
+fi
 SSH_CONF="\
 # Genere par apply-homesec-core.sh - CIS Debian 13 5.1.x
 # Root SSH restreint au reseau de management (guide PVE 9, option B)
@@ -317,7 +323,7 @@ ClientAliveCountMax 2
 MaxSessions 5
 MaxStartups 10:30:60
 Banner /etc/issue.net
-AllowUsers root $ADMIN_USER
+AllowUsers $ALLOW_USERS
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
 KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256
@@ -361,6 +367,14 @@ exec_cmd "systemctl restart ssh"
 # =============================================================================
 block 1 "6. PAM : faillock + pwquality (CIS 5.3.3.1, 5.4.1, 5.4.2)"
 ref "CIS Debian 13 5.3.3.1.x / 5.4.1.x / 5.4.2.x + guide PVE 9"
+# sudo et chrony sont requis par la suite de tests fonctionnels OS
+# (non-regression des privileges et de la synchronisation horaire) : sans
+# eux, ces tests seraient 'NA' et la non-regression OS ne serait pas
+# verifiable sur l'OS durci.
+exec_cmd "apt-get install -y sudo chrony"
+if [ "$DRY_RUN" != "1" ] && command -v chronyd >/dev/null 2>&1; then
+    exec_cmd "systemctl enable --now chrony" || exec_cmd "systemctl enable --now chronyd"
+fi
 exec_cmd "apt-get install -y libpam-modules libpam-pwquality"
 
 # --- CIS 5.3.3.1 : verrouillage de compte apres echecs d'authentification
@@ -758,11 +772,24 @@ find "$BACKUP_DIR" -type f | while read -r f; do
 done
 rm -f /etc/ssh/sshd_config.d/00-pve-hardening.conf
 rm -f /etc/modprobe.d/99-pve-hardening.conf
+rm -f /etc/modprobe.d/99-anssi-usb.conf
 rm -f /etc/sysctl.d/99-pve-hardening.conf
+rm -f /etc/sysctl.d/97-pve-hardening.conf
+rm -f /etc/sysctl.d/98-anssi.conf
 rm -f /etc/systemd/journald.conf.d/99-pve-hardening.conf
 rm -f /etc/audit/rules.d/90-pve.rules
 rm -f /etc/fail2ban/jail.d/pve-web.conf
-systemctl restart ssh systemd-journald pve-firewall fail2ban 2>/dev/null || true
+rm -f /etc/rsyslog.d/99-anssi-remote.conf
+rm -f /etc/profile.d/tmout.sh
+rm -f /etc/profile.d/99-pve-hardening.sh
+rm -f /etc/issue.net
+rm -f /etc/cron.allow
+rm -f /etc/cron.daily/aide-check
+rm -f /etc/security/pwquality.conf
+rm -f /etc/security/faillock.conf
+rm -f /etc/security/limits.d/99-pve-hardening.conf
+systemctl restart ssh systemd-journald pve-firewall fail2ban apparmor rsyslog 2>/dev/null || true
+sysctl --system 2>/dev/null || true
 echo "Rollback termine. Redemarrage recommande."
 EOF
     chmod 0700 /root/rollback-hardening.sh
