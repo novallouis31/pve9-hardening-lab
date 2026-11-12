@@ -172,6 +172,11 @@ DNS_NAT="${DNS_NAT:-10.0.2.3}"
 if [ "$DRY_RUN" != "1" ]; then
     # cf. apply-homesec-core.sh : la detection repose sur la resolution ET la
     # joignabilite reelle du depot (le cache DNS peut masquer la panne).
+    # Les listes de paquets peuvent avoir ete telechargees a ZERO OCTET
+    # lors d'une panne DNS : apt les met en cache et annonce "Hit" ensuite,
+    # sans jamais les retelecharger. On les purge pour forcer la reprise.
+    find /var/lib/apt/lists -type f -size 0 -name '*_Packages*' -delete 2>/dev/null || true
+    rm -f /var/lib/apt/lists/*Partial* 2>/dev/null || true
     if ! getent hosts deb.debian.org >/dev/null 2>&1 || ! timeout 30 apt-get update >/dev/null 2>&1; then
         echo "  [ok] DNS ou depot non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
         cp -a /etc/resolv.conf /etc/resolv.conf.bak-lab 2>/dev/null || true
@@ -377,6 +382,22 @@ if [ "$DRY_RUN" != "1" ]; then
   for d in $dups; do
     log "  [warn] UID duplique : $d"
   done
+fi
+
+
+# --- Verification post-installation des paquets requis ----------------------
+# Un echec d'installation (reseau, depot injoignable, conflit) doit etre
+# visible IMMEDIATEMENT, et non 12 controles d'audit plus tard.
+missing_pkgs=""
+for p in aide aide-common apparmor-utils rsyslog; do
+    if ! dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "^install ok installed$"; then
+        missing_pkgs="$missing_pkgs $p"
+    fi
+done
+if [ -n "$missing_pkgs" ]; then
+    log "ECHEC : paquet(s) requis non installes :$missing_pkgs"
+    log "         verifier le depot apt et la resolution DNS (voir /etc/resolv.conf)"
+    exit 1
 fi
 
 log "ANSSI termine LEVEL=$LEVEL"

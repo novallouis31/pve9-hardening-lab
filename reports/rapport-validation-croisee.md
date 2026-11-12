@@ -7,6 +7,8 @@ dependent pas d'un etat residuel de l'environnement.
 
 | VM | PASS | FAIL | Compliance | Regressions | Echecs fonctionnels |
 |---|---:|---:|---:|---:|---:|
+| proxmox | 0 | 0 | 0 % | 0 | 0 |
+| proxmox2 | 132 | 12 | 91.7 % | 0 | 0 |
 | proxmox3 | 132 | 12 | 91.7 % | 0 | 0 |
 
-Genere le 2026-11-12 19:15:32.
+Genere le 2026-11-12 20:16:26.
