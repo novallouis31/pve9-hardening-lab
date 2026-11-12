@@ -164,6 +164,18 @@ fi
 
 block 2 "ANSSI N2 - AIDE (integrite fichiers)"
 ref "harbian 8.4.1/8.4.2"
+# --- DNS joignable via le NAT VirtualBox (cf. apply-homesec-core.sh) ---------
+# Sans resolution de nom, apt-get update echoue et aucun paquet ne peut etre
+# installe (AIDE, rsyslog, apparmor-utils...) : les controles d'audit
+# correspondants echoueraient alors a tort.
+DNS_NAT="${DNS_NAT:-10.0.2.3}"
+if [ "$DRY_RUN" != "1" ]; then
+    if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+        echo "  [ok] DNS non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
+        cp -a /etc/resolv.conf /etc/resolv.conf.bak-lab 2>/dev/null || true
+        printf 'search lab.local\nnameserver %s\n' "$DNS_NAT" > /etc/resolv.conf
+    fi
+fi
 # Les depots enterprise Proxmox (pve + ceph-squid) exigent une licence et
 # renvoient 401 : ils cassent apt-get update. On les desactive (inutile en lab).
 if [ "$DRY_RUN" != "1" ]; then

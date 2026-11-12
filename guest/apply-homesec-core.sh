@@ -367,6 +367,21 @@ exec_cmd "systemctl restart ssh"
 # =============================================================================
 block 1 "6. PAM : faillock + pwquality (CIS 5.3.3.1, 5.4.1, 5.4.2)"
 ref "CIS Debian 13 5.3.3.1.x / 5.4.1.x / 5.4.2.x + guide PVE 9"
+# --- DNS joignable via le NAT VirtualBox -------------------------------------
+# Le DHCP fournit le DNS du reseau corporate de l'hote, qui n'est PAS route
+# par le NAT VirtualBox : sans resolution de nom, `apt-get update` echoue
+# et AUCUN paquet ne peut etre installe (une dozenaine de controles
+# d'audit echoueraient alors a tort).
+DNS_NAT="${DNS_NAT:-10.0.2.3}"
+if [ "$DRY_RUN" != "1" ]; then
+    if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+        echo "  [ok] DNS non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
+        cp -a /etc/resolv.conf /etc/resolv.conf.bak-lab 2>/dev/null || true
+        printf 'search lab.local\nnameserver %s\n' "$DNS_NAT" > /etc/resolv.conf
+    fi
+    # les listes de paquets peuvent etre absentes ou perimees
+    apt-get update -y >/dev/null 2>&1 || echo "  [warn] apt-get update a echoue (voir /var/log/hardening-*.log)"
+fi
 # sudo et chrony sont requis par la suite de tests fonctionnels OS
 # (non-regression des privileges et de la synchronisation horaire) : sans
 # eux, ces tests seraient 'NA' et la non-regression OS ne serait pas

@@ -366,6 +366,13 @@ if command -v apt-get >/dev/null 2>&1; then
     else
         twarn "OS.APT.CHECK" "apt-get check a signale un probleme"
     fi
+    # Le depot doit etre joignable : sans DNS, aucune mise a jour de
+    # securite n'est possible (c'est un defaut fonctionnel de l'OS).
+    if timeout 60 apt-get update >/dev/null 2>&1; then
+        tpass "OS.APT.UPDATE" "apt-get update operationnel (depot joignable)"
+    else
+        tfail "OS.APT.UPDATE" "apt-get update en echec : depot injoignable (DNS ?)"
+    fi
 else
     tna "OS.APT.CHECK" "apt-get absent"
 fi
