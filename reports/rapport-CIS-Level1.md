@@ -1,15 +1,15 @@
 ﻿# CIS Debian 13 Level 1 + guide PVE 9 - Proxmox VE 9
 
-- **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261112-135001`
-- **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-135658`
-- **Genere le** : 2026-11-12 13:57:02
+- **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261112-141906`
+- **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-142224`
+- **Genere le** : 2026-11-12 14:22:27
 
 ## Synthese
 
 | Indicateur | Avant | Apres | Delta |
 |---|---:|---:|---:|
-| Controles conformes (PASS) | 64 | 127 | +63 |
-| Controles en echec (FAIL) | 75 | 14 | (-63) |
+| Controles conformes (PASS) | 68 | 131 | +63 |
+| Controles en echec (FAIL) | 72 | 11 | (-63) |
 | Regressions | - | 0 | |
 | Ameliorations | - | 63 | |
 
@@ -96,9 +96,6 @@
 | `CEPH.AUTH.CEPHX` | FAIL | cephx non verifiable (conf absente) |
 | `CEPH.MSGR2` | FAIL | chiffrement msgr2 non verifiable (conf absente) |
 | `CEPH.CONF.PERM` | FAIL | /etc/ceph en 755 (attendu 750/700) |
-| `COMM.SYSCTL.NET_IPV4_CONF_ALL_RP_FILTER` | FAIL | net.ipv4.conf.all.rp_filter=2 (attendu 1) |
-| `COMM.LOG.PERMS` | FAIL | permissions excessives : /var/log/journal(2755) |
-| `COMM.PASSWD.HASH` | FAIL | 0 hash(s) obsolete(s) (SHA-512 : 0) |
 
 ## Conformite par perimetre de guide
 
@@ -107,7 +104,7 @@
 | ANSSI BP-028 | 32 | 15 | 25 | 10 | 7 | 78.1 % |
 | Ceph | 11 | 1 | 1 | 0 | 4 | 20 % |
 | CIS Debian 13 | 19 | 6 | 18 | 12 | 0 | 100 % |
-| Communautaire (harbian/BP-028) | 30 | 16 | 25 | 9 | 3 | 89.3 % |
+| Communautaire (harbian/BP-028) | 31 | 20 | 29 | 9 | 0 | 100 % |
 | PVE 9 / OS | 67 | 25 | 57 | 32 | 0 | 100 % |
 
 ## Recapitulatif complet - tous les controles
@@ -177,14 +174,14 @@
 | 61 | `CIS.6.1.2.4` | PASS | PASS | inchange | /etc/gshadow en 640 |
 | 62 | `CIS.6.1.3.1` | PASS | PASS | inchange | /root en 700 |
 | 63 | `COMM.CTRLALTDEL` | FAIL | PASS | amelioration | ctrl-alt-del.target desactive |
-| 64 | `COMM.FILES.SUID` | INFO | INFO | inchange | 26 fichier(s) SUID sur le systeme de fichiers racine |
+| 64 | `COMM.FILES.SUID` | INFO | INFO | inchange | 27 fichier(s) SUID sur le systeme de fichiers racine |
 | 65 | `COMM.FILES.UNOWNED` | INFO | INFO | inchange | 0 fichier(s) sans proprietaire dans /etc |
 | 66 | `COMM.FILES.WORLDWRITABLE` | PASS | PASS | inchange | aucun fichier world-writable dans /etc et les binaires |
 | 67 | `COMM.GSHADOW.EMPTY` | PASS | PASS | inchange | aucun groupe avec mot de passe vide |
 | 68 | `COMM.HOME.OWNERSHIP` | PASS | PASS | inchange | tous les repertoires personnels appartiennent a leur utilisateur |
 | 69 | `COMM.JOURNALD.STORAGE` | INFO | PASS | amelioration | Storage=persistent;Compress=yes; |
-| 70 | `COMM.LOG.PERMS` | FAIL | FAIL | inchange | permissions excessives : /var/log/journal(2755) |
-| 71 | `COMM.PASSWD.HASH` | FAIL | FAIL | inchange | 0 hash(s) obsolete(s) (SHA-512 : 0) |
+| 70 | `COMM.LOG.PERMS` | PASS | PASS | inchange | permissions des repertoires de journaux conformes |
+| 71 | `COMM.PASSWD.HASH` | PASS | PASS | inchange | 1 hash(s) moderne(s) (yescrypt=1 sha512=0), 0 obsolete |
 | 72 | `COMM.PKG.LEGACY` | PASS | PASS | inchange | aucun paquet reseau legacy installe |
 | 73 | `COMM.SUDO.NOAUTH` | PASS | PASS | inchange | aucune directive !authenticate dans les sudoers |
 | 74 | `COMM.SUDO.NOPASSWD` | PASS | PASS | inchange | aucune directive NOPASSWD dans les sudoers |
@@ -196,81 +193,82 @@
 | 80 | `COMM.SYSCTL.KERNEL_RANDOMIZE_VA_SPACE` | PASS | PASS | inchange | kernel.randomize_va_space=2 |
 | 81 | `COMM.SYSCTL.KERNEL_YAMA_PTRACE_SCOPE` | PASS | PASS | inchange | ptrace_scope=2 (>=1) |
 | 82 | `COMM.SYSCTL.NET_IPV4_CONF_ALL_ACCEPT_REDIRECTS` | FAIL | PASS | amelioration | net.ipv4.conf.all.accept_redirects=0 |
-| 83 | `COMM.SYSCTL.NET_IPV4_CONF_ALL_RP_FILTER` | FAIL | FAIL | inchange | net.ipv4.conf.all.rp_filter=2 (attendu 1) |
+| 83 | `COMM.SYSCTL.NET_IPV4_CONF_all_RP_FILTER` | PASS | PASS | inchange | rp_filter=2 (1=loose, 2=strict) |
 | 84 | `COMM.SYSCTL.NET_IPV4_CONF_ALL_SEND_REDIRECTS` | FAIL | PASS | amelioration | net.ipv4.conf.all.send_redirects=0 |
 | 85 | `COMM.SYSCTL.NET_IPV4_CONF_DEFAULT_ACCEPT_REDIRECTS` | FAIL | PASS | amelioration | net.ipv4.conf.default.accept_redirects=0 |
-| 86 | `COMM.SYSCTL.NET_IPV4_CONF_DEFAULT_SEND_REDIRECTS` | FAIL | PASS | amelioration | net.ipv4.conf.default.send_redirects=0 |
-| 87 | `COMM.SYSCTL.NET_IPV4_ICMP_ECHO_IGNORE_BROADCASTS` | PASS | PASS | inchange | net.ipv4.icmp_echo_ignore_broadcasts=1 |
-| 88 | `COMM.SYSCTL.NET_IPV4_TCP_SYNCOOKIES` | PASS | PASS | inchange | net.ipv4.tcp_syncookies=1 |
-| 89 | `COMM.SYSCTL.NET_IPV6_CONF_ALL_ACCEPT_RA` | FAIL | PASS | amelioration | net.ipv6.conf.all.accept_ra=0 |
-| 90 | `COMM.SYSCTL.NET_IPV6_CONF_ALL_ACCEPT_REDIRECTS` | FAIL | PASS | amelioration | net.ipv6.conf.all.accept_redirects=0 |
-| 91 | `COMM.USR.EMPTY.PASSWORD` | PASS | PASS | inchange | aucun compte avec un champ mot de passe vide |
-| 92 | `COMM.USR.NOBODY.UID` | PASS | PASS | inchange | nobody a l'UID 65534 |
-| 93 | `OS.APPARMOR.ACTIVE` | PASS | PASS | inchange | apparmor actif |
-| 94 | `OS.APPARMOR.ENFORCE` | FAIL | PASS | amelioration | 119 profils en enforce, 0 en complain |
-| 95 | `OS.AUDITD.ACTIVE` | FAIL | PASS | amelioration | auditd actif |
-| 96 | `OS.AUDITD.PVE` | FAIL | PASS | amelioration | regles d'audit sur /etc/pve |
-| 97 | `OS.COREDUMP.LIMITS` | PASS | PASS | inchange | limite core dumps a 0 |
-| 98 | `OS.COREDUMP.SYSCALL` | PASS | PASS | inchange | fs.suid_dumpable=0 |
-| 99 | `OS.CRON.CRONTAB` | FAIL | PASS | amelioration | /etc/crontab en 600 |
-| 100 | `OS.CRON.DIR.cron.d` | FAIL | PASS | amelioration | /etc/cron.d en 700 |
-| 101 | `OS.CRON.DIR.cron.daily` | FAIL | PASS | amelioration | /etc/cron.daily en 700 |
-| 102 | `OS.CRON.DIR.cron.hourly` | FAIL | PASS | amelioration | /etc/cron.hourly en 700 |
-| 103 | `OS.CRON.DIR.cron.monthly` | FAIL | PASS | amelioration | /etc/cron.monthly en 700 |
-| 104 | `OS.CRON.DIR.cron.weekly` | FAIL | PASS | amelioration | /etc/cron.weekly en 700 |
-| 105 | `OS.JOURNALD.Compress` | FAIL | PASS | amelioration | Compress=yes |
-| 106 | `OS.JOURNALD.Storage` | FAIL | PASS | amelioration | Storage=persistent |
-| 107 | `OS.MOD.cramfs` | PASS | PASS | inchange | module cramfs neutralise |
-| 108 | `OS.MOD.freevxfs` | PASS | PASS | inchange | module freevxfs neutralise |
-| 109 | `OS.MOD.hfs` | PASS | PASS | inchange | module hfs neutralise |
-| 110 | `OS.MOD.hfsplus` | PASS | PASS | inchange | module hfsplus neutralise |
-| 111 | `OS.MOD.jffs2` | PASS | PASS | inchange | module jffs2 neutralise |
-| 112 | `OS.MOUNT._dev_shm` | FAIL | PASS | amelioration | /dev/shm opts=rw,nosuid,nodev,noexec,inode64 |
-| 113 | `OS.MOUNT._tmp` | PASS | PASS | inchange | /tmp opts=rw,nosuid,nodev,nr_inodes=1048576,inode64 |
-| 114 | `OS.MOUNT._var_tmp` | FAIL | PASS | amelioration | /var/tmp opts=rw,nosuid,nodev,noexec,relatime,size=524288k,inode64 |
-| 115 | `OS.NETMOD.atm` | PASS | PASS | inchange | module atm neutralise |
-| 116 | `OS.NETMOD.can` | PASS | PASS | inchange | module can neutralise |
-| 117 | `OS.NETMOD.dccp` | PASS | PASS | inchange | module dccp neutralise |
-| 118 | `OS.NETMOD.rds` | PASS | PASS | inchange | module rds neutralise |
-| 119 | `OS.NETMOD.sctp` | PASS | PASS | inchange | module sctp neutralise |
-| 120 | `OS.NETMOD.tipc` | PASS | PASS | inchange | module tipc neutralise |
-| 121 | `OS.NTP` | PASS | PASS | inchange | service de synchronisation temps present |
-| 122 | `OS.PAM.FAILLOCK` | FAIL | PASS | amelioration | pam_faillock configure |
-| 123 | `OS.PAM.FAILLOCK.POLICY` | FAIL | PASS | amelioration | deny=5 unlock_time=900 |
-| 124 | `OS.PAM.MINLEN` | FAIL | PASS | amelioration | minlen=14 |
-| 125 | `OS.PAM.PWQUALITY` | FAIL | PASS | amelioration | libpam-pwquality / cracklib installe |
-| 126 | `OS.ROOTKIT.TOOL` | FAIL | PASS | amelioration | outil de detection de rootkit installe |
-| 127 | `OS.RSYSLOG` | INFO | INFO | inchange | rsyslog inactif (logs locaux uniquement) |
-| 128 | `OS.SSHD.ALLOWLIST` | FAIL | PASS | amelioration | AllowUsers=root AllowGroups=none |
-| 129 | `OS.SSHD.CIPHERS` | PASS | PASS | inchange | ciphers sans algorithme faible |
-| 130 | `OS.SSHD.CLIENTALIVE` | FAIL | PASS | amelioration | ClientAliveInterval=300 CountMax=2 |
-| 131 | `OS.SSHD.EMPTYPASS` | PASS | PASS | inchange | PermitEmptyPasswords=no |
-| 132 | `OS.SSHD.GRACETIME` | FAIL | PASS | amelioration | LoginGraceTime=30 |
-| 133 | `OS.SSHD.HOSTKEYS` | PASS | PASS | inchange | cles hote en 600 |
-| 134 | `OS.SSHD.KEX` | PASS | PASS | inchange | KexAlgorithms sans algorithme faible |
-| 135 | `OS.SSHD.MACS` | FAIL | PASS | amelioration | MACs sans algorithme faible |
-| 136 | `OS.SSHD.MAXAUTH` | PASS | PASS | inchange | MaxAuthTries=4 |
-| 137 | `OS.SSHD.PASSWORDAUTH` | FAIL | PASS | amelioration | PasswordAuthentication=no |
-| 138 | `OS.SSHD.PERM.sshd_config` | FAIL | PASS | amelioration | /etc/ssh/sshd_config en 600 |
-| 139 | `OS.SSHD.PERM.sshd_config.d` | FAIL | PASS | amelioration | /etc/ssh/sshd_config.d en 700 |
-| 140 | `OS.SSHD.PERMITROOT` | FAIL | PASS | amelioration | PermitRootLogin=no |
-| 141 | `OS.SSHD.PUBKEY` | PASS | PASS | inchange | PubkeyAuthentication=yes |
-| 142 | `OS.SSHD.X11` | FAIL | PASS | amelioration | X11Forwarding=no |
-| 143 | `OS.UNATTENDED.ENABLED` | FAIL | PASS | amelioration | mises a jour automatiques activees |
-| 144 | `OS.UNATTENDED.PKG` | FAIL | PASS | amelioration | unattended-upgrades installe |
-| 145 | `PVE.API.TOKENS` | INFO | INFO | inchange | 0 token(s) API dans /etc/pve/priv/token.cfg |
-| 146 | `PVE.BOOT.LOCKDOWN` | INFO | INFO | inchange | kernel lockdown=[none] integrity confidentiality |
-| 147 | `PVE.BOOT.SECUREBOOT` | NA | NA | inchange | demarrage BIOS (pas d'efivarfs) - non applicable en lab VirtualBox |
-| 148 | `PVE.CRYPT.LUKS` | NA | NA | inchange | chiffrement de disque non applique (decision d'installation, hors perimetre CIS L1/L2) |
-| 149 | `PVE.F2B.GUI` | FAIL | PASS | amelioration | fail2ban protege l'interface web Proxmox |
-| 150 | `PVE.F2B.PKG` | FAIL | PASS | amelioration | fail2ban installe |
-| 151 | `PVE.FW.CLUSTER` | FAIL | PASS | amelioration | /etc/pve/firewall/cluster.fw present |
-| 152 | `PVE.FW.FORWARD` | NA | NA | inchange | pas de configuration firewall par noeud |
-| 153 | `PVE.GUI.CERT` | INFO | INFO | inchange | certificat GUI absent ou a renouveler |
-| 154 | `PVE.LXC.UNPRIV` | NA | NA | inchange | aucun conteneur LXC |
-| 155 | `SYS.01` | INFO | INFO | inchange | Debian=13 PVE=(running |
-| 156 | `USR.EMPTY.PASS` | PASS | PASS | inchange | aucun compte sans mot de passe |
-| 157 | `USR.HASH` | INFO | INFO | inchange | 1 comptes avec hash yescrypt ($y$) |
-| 158 | `USR.SHADOW.PERM` | PASS | PASS | inchange | /etc/shadow en 640 |
-| 159 | `USR.UID0` | PASS | PASS | inchange | un seul compte UID 0 |
+| 86 | `COMM.SYSCTL.NET_IPV4_CONF_default_RP_FILTER` | PASS | PASS | inchange | rp_filter=1 (1=loose, 2=strict) |
+| 87 | `COMM.SYSCTL.NET_IPV4_CONF_DEFAULT_SEND_REDIRECTS` | FAIL | PASS | amelioration | net.ipv4.conf.default.send_redirects=0 |
+| 88 | `COMM.SYSCTL.NET_IPV4_ICMP_ECHO_IGNORE_BROADCASTS` | PASS | PASS | inchange | net.ipv4.icmp_echo_ignore_broadcasts=1 |
+| 89 | `COMM.SYSCTL.NET_IPV4_TCP_SYNCOOKIES` | PASS | PASS | inchange | net.ipv4.tcp_syncookies=1 |
+| 90 | `COMM.SYSCTL.NET_IPV6_CONF_ALL_ACCEPT_RA` | FAIL | PASS | amelioration | net.ipv6.conf.all.accept_ra=0 |
+| 91 | `COMM.SYSCTL.NET_IPV6_CONF_ALL_ACCEPT_REDIRECTS` | FAIL | PASS | amelioration | net.ipv6.conf.all.accept_redirects=0 |
+| 92 | `COMM.USR.EMPTY.PASSWORD` | PASS | PASS | inchange | aucun compte avec un champ mot de passe vide |
+| 93 | `COMM.USR.NOBODY.UID` | PASS | PASS | inchange | nobody a l'UID 65534 |
+| 94 | `OS.APPARMOR.ACTIVE` | PASS | PASS | inchange | apparmor actif |
+| 95 | `OS.APPARMOR.ENFORCE` | FAIL | PASS | amelioration | 119 profils en enforce, 0 en complain |
+| 96 | `OS.AUDITD.ACTIVE` | FAIL | PASS | amelioration | auditd actif |
+| 97 | `OS.AUDITD.PVE` | FAIL | PASS | amelioration | regles d'audit sur /etc/pve |
+| 98 | `OS.COREDUMP.LIMITS` | PASS | PASS | inchange | limite core dumps a 0 |
+| 99 | `OS.COREDUMP.SYSCALL` | PASS | PASS | inchange | fs.suid_dumpable=0 |
+| 100 | `OS.CRON.CRONTAB` | FAIL | PASS | amelioration | /etc/crontab en 600 |
+| 101 | `OS.CRON.DIR.cron.d` | FAIL | PASS | amelioration | /etc/cron.d en 700 |
+| 102 | `OS.CRON.DIR.cron.daily` | FAIL | PASS | amelioration | /etc/cron.daily en 700 |
+| 103 | `OS.CRON.DIR.cron.hourly` | FAIL | PASS | amelioration | /etc/cron.hourly en 700 |
+| 104 | `OS.CRON.DIR.cron.monthly` | FAIL | PASS | amelioration | /etc/cron.monthly en 700 |
+| 105 | `OS.CRON.DIR.cron.weekly` | FAIL | PASS | amelioration | /etc/cron.weekly en 700 |
+| 106 | `OS.JOURNALD.Compress` | FAIL | PASS | amelioration | Compress=yes |
+| 107 | `OS.JOURNALD.Storage` | FAIL | PASS | amelioration | Storage=persistent |
+| 108 | `OS.MOD.cramfs` | PASS | PASS | inchange | module cramfs neutralise |
+| 109 | `OS.MOD.freevxfs` | PASS | PASS | inchange | module freevxfs neutralise |
+| 110 | `OS.MOD.hfs` | PASS | PASS | inchange | module hfs neutralise |
+| 111 | `OS.MOD.hfsplus` | PASS | PASS | inchange | module hfsplus neutralise |
+| 112 | `OS.MOD.jffs2` | PASS | PASS | inchange | module jffs2 neutralise |
+| 113 | `OS.MOUNT._dev_shm` | FAIL | PASS | amelioration | /dev/shm opts=rw,nosuid,nodev,noexec,inode64 |
+| 114 | `OS.MOUNT._tmp` | PASS | PASS | inchange | /tmp opts=rw,nosuid,nodev,size=4065212k,nr_inodes=1048576,inode64 |
+| 115 | `OS.MOUNT._var_tmp` | FAIL | PASS | amelioration | /var/tmp opts=rw,nosuid,nodev,noexec,relatime,size=524288k,inode64 |
+| 116 | `OS.NETMOD.atm` | PASS | PASS | inchange | module atm neutralise |
+| 117 | `OS.NETMOD.can` | PASS | PASS | inchange | module can neutralise |
+| 118 | `OS.NETMOD.dccp` | PASS | PASS | inchange | module dccp neutralise |
+| 119 | `OS.NETMOD.rds` | PASS | PASS | inchange | module rds neutralise |
+| 120 | `OS.NETMOD.sctp` | PASS | PASS | inchange | module sctp neutralise |
+| 121 | `OS.NETMOD.tipc` | PASS | PASS | inchange | module tipc neutralise |
+| 122 | `OS.NTP` | PASS | PASS | inchange | service de synchronisation temps present |
+| 123 | `OS.PAM.FAILLOCK` | FAIL | PASS | amelioration | pam_faillock configure |
+| 124 | `OS.PAM.FAILLOCK.POLICY` | FAIL | PASS | amelioration | deny=5 unlock_time=900 |
+| 125 | `OS.PAM.MINLEN` | FAIL | PASS | amelioration | minlen=14 |
+| 126 | `OS.PAM.PWQUALITY` | FAIL | PASS | amelioration | libpam-pwquality / cracklib installe |
+| 127 | `OS.ROOTKIT.TOOL` | FAIL | PASS | amelioration | outil de detection de rootkit installe |
+| 128 | `OS.RSYSLOG` | INFO | INFO | inchange | rsyslog inactif (logs locaux uniquement) |
+| 129 | `OS.SSHD.ALLOWLIST` | FAIL | PASS | amelioration | AllowUsers=root AllowGroups=none |
+| 130 | `OS.SSHD.CIPHERS` | PASS | PASS | inchange | ciphers sans algorithme faible |
+| 131 | `OS.SSHD.CLIENTALIVE` | FAIL | PASS | amelioration | ClientAliveInterval=300 CountMax=2 |
+| 132 | `OS.SSHD.EMPTYPASS` | PASS | PASS | inchange | PermitEmptyPasswords=no |
+| 133 | `OS.SSHD.GRACETIME` | FAIL | PASS | amelioration | LoginGraceTime=30 |
+| 134 | `OS.SSHD.HOSTKEYS` | PASS | PASS | inchange | cles hote en 600 |
+| 135 | `OS.SSHD.KEX` | PASS | PASS | inchange | KexAlgorithms sans algorithme faible |
+| 136 | `OS.SSHD.MACS` | FAIL | PASS | amelioration | MACs sans algorithme faible |
+| 137 | `OS.SSHD.MAXAUTH` | PASS | PASS | inchange | MaxAuthTries=4 |
+| 138 | `OS.SSHD.PASSWORDAUTH` | FAIL | PASS | amelioration | PasswordAuthentication=no |
+| 139 | `OS.SSHD.PERM.sshd_config` | FAIL | PASS | amelioration | /etc/ssh/sshd_config en 600 |
+| 140 | `OS.SSHD.PERM.sshd_config.d` | FAIL | PASS | amelioration | /etc/ssh/sshd_config.d en 700 |
+| 141 | `OS.SSHD.PERMITROOT` | FAIL | PASS | amelioration | PermitRootLogin=no |
+| 142 | `OS.SSHD.PUBKEY` | PASS | PASS | inchange | PubkeyAuthentication=yes |
+| 143 | `OS.SSHD.X11` | FAIL | PASS | amelioration | X11Forwarding=no |
+| 144 | `OS.UNATTENDED.ENABLED` | FAIL | PASS | amelioration | mises a jour automatiques activees |
+| 145 | `OS.UNATTENDED.PKG` | FAIL | PASS | amelioration | unattended-upgrades installe |
+| 146 | `PVE.API.TOKENS` | INFO | INFO | inchange | 0 token(s) API dans /etc/pve/priv/token.cfg |
+| 147 | `PVE.BOOT.LOCKDOWN` | INFO | INFO | inchange | kernel lockdown=[none] integrity confidentiality |
+| 148 | `PVE.BOOT.SECUREBOOT` | NA | NA | inchange | demarrage BIOS (pas d'efivarfs) - non applicable en lab VirtualBox |
+| 149 | `PVE.CRYPT.LUKS` | NA | NA | inchange | chiffrement de disque non applique (decision d'installation, hors perimetre CIS L1/L2) |
+| 150 | `PVE.F2B.GUI` | FAIL | PASS | amelioration | fail2ban protege l'interface web Proxmox |
+| 151 | `PVE.F2B.PKG` | FAIL | PASS | amelioration | fail2ban installe |
+| 152 | `PVE.FW.CLUSTER` | FAIL | PASS | amelioration | /etc/pve/firewall/cluster.fw present |
+| 153 | `PVE.FW.FORWARD` | NA | NA | inchange | pas de configuration firewall par noeud |
+| 154 | `PVE.GUI.CERT` | INFO | INFO | inchange | certificat GUI absent ou a renouveler |
+| 155 | `PVE.LXC.UNPRIV` | NA | NA | inchange | aucun conteneur LXC |
+| 156 | `SYS.01` | INFO | INFO | inchange | Debian=13 PVE=(running |
+| 157 | `USR.EMPTY.PASS` | PASS | PASS | inchange | aucun compte sans mot de passe |
+| 158 | `USR.HASH` | INFO | INFO | inchange | 1 comptes avec hash yescrypt ($y$) |
+| 159 | `USR.SHADOW.PERM` | PASS | PASS | inchange | /etc/shadow en 640 |
+| 160 | `USR.UID0` | PASS | PASS | inchange | un seul compte UID 0 |
 

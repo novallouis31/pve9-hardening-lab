@@ -33,16 +33,44 @@ d'autres guides et sont appliques par leurs propres niveaux.
 4. **Recapitulatif complet** — chaque controle avec Avant / Apres / Evolution / Detail
 5. **Tests fonctionnels avant / apres** — non-regression du fonctionnement PVE
 
-## Tests fonctionnels (non-regression Proxmox)
+## Tests fonctionnels (non-regression)
 
-Web UI (8006), API pvesh, authentification SSH par cle, services critiques
-(pveproxy, pvedaemon, pvestatd, ssh), pare-feu PVE, stockage (pvesm), reseau
-(interface, pont vmbr0, passerelle), noeud en ligne, taches, **creation puis
-destruction d'un conteneur LXC de test**, depot de fichiers (pveam), certificat
-TLS, journalisation.
+Deux suites sont executees **avant et apres** chaque cycle de durcissement, et
+leurs resultats sont traces dans chaque PDF :
 
-**Resultat : 19 PASS / 0 FAIL avant ET apres le durcissement, 0 regression
-fonctionnelle sur l'ensemble des cycles.**
+| Suite | Script | Objet | Volume |
+|---|---|---|---|
+| Proxmox | `guest/func-test-pve.sh` | le durcissement ne casse **pas Proxmox** | 21 tests |
+| OS | `guest/func-test-os.sh` | le durcissement ne casse **pas l'OS** | 48 tests |
+
+**Suite OS** (systemd, sysctl, montages, espace disque, DNS/routage, PAM, sudo,
+comptes, cron, journald/rsyslog/auditd, AppArmor, dpkg/apt, noyau/limites,
+horloge, locale). Elle est indispensable : un durcissement peut laisser
+Proxmox intact tout en cassant l'OS (sysctl incoherent, PAM corrompu, cron
+bloque, journalisation perdue) — ce que les seuls tests Proxmox ne
+detecteraient pas.
+
+Chaque PDF contient :
+- la section **« Tests fonctionnels - synthese par suite (non-regression) »**
+  (PASS avant/apres, FAIL avant/apres, regressions par suite) ;
+- la section **« Tests fonctionnels - avant / apres durcissement »** avec le
+  detail de chaque test et sa serie Proxmox ou OS ;
+- les KPI dedies **« Non-regression Proxmox »** et **« Non-regression OS »**
+  dans le bandeau de synthese.
+
+Les tests PVE couvrent : Web UI (8006), API pvesh, authentification SSH par
+cle, services critiques (pveproxy, pvedaemon, pvestatd, ssh), pare-feu PVE,
+stockage (pvesm), reseau (interface, pont vmbr0, passerelle), noeud en ligne,
+taches, **creation puis destruction d'un conteneur LXC de test**, depot de
+fichiers (pveam), certificat TLS, journalisation.
+
+Les tests OS couvrent : etat systemd et unites en echec, application effective
+des sysctl, montages et options (`nosuid`/`nodev`/`noexec`), espace disque et
+inodes, loopback / DNS / route par defaut, chaine PAM et authentification,
+sudo, comptes et shells, cron (daemon, `cron.allow`, crontab), journald /
+rsyslog / auditd, profils AppArmor, coherence dpkg et `apt-get check`, modules
+noyau charges, limites (`ulimit -c`), synchronisation horaire, locale et
+fuseau.
 
 ## Points cles
 

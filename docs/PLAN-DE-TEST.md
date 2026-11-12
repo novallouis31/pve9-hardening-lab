@@ -91,6 +91,21 @@ La suite OS est indispensable : un durcissement peut laisser Proxmox intact tout
 casseant l'OS (sysctl incoherent, PAM corrompu, cron bloque, journalisation perdue),
 ce que les seuls tests Proxmox ne detecteraient pas.
 
+### Bugs fonctionnels reels detectes par la suite OS
+
+La suite OS a immediatement mis en evidence une regression que les 21 tests Proxmox
+ne pouvaient pas voir :
+
+| Symptome | Cause racine | Correctif |
+|---|---|---|
+| `fail2ban.service` en echec (`status=255`), OS en etat `degraded` | le filtre `proxmox` de fail2ban 1.x contient une `failregex` **sans groupe `<HOST>`** -> `ERROR No failure-id group` | filtre dedie `pveproxy` ecrit par le lab |
+| idem | la regex JSON du filtre ne correspondait pas au format reel du log pveproxy (format Apache, pas JSON) | regex `401`/`403` au format Apache |
+| idem | `port = https,http` genereait une regle nftables `dport { https,http }` invalide | un port par jail |
+| idem | le fichier de jail ecrit via heredoc demarrait par un backslash litteral -> `File contains no section headers` | ecriture via `write_file` |
+
+Le control audit `OS.SSHD.PERMITROOT` a egalement impose de revoir la strategie
+root SSH : voir la section dediee dans le README.
+
 ### Etape 5 — Faire un snapshot
 
 ```powershell

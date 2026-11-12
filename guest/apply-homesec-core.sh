@@ -559,25 +559,60 @@ block 1 "9. Fail2ban sur l'interface web Proxmox (guide 2.3.3)"
 # =============================================================================
 ref "Guide PVE 9 § 2.3.3 Protect the GUI with Fail2Ban"
 exec_cmd "apt-get install -y fail2ban"
+# NB : 'port = https,http' fait echouer fail2ban (status=255) car
+# l'action nftables genere une regle 'dport { https,http }' invalide.
+# On declare donc un port par jail : fail2ban cree une action par port.
 write_file /etc/fail2ban/jail.d/pve-web.conf 0644 "\
 # Genere par apply-homesec-core.sh - protection de l'interface web PVE
 [pve-web]
 enabled  = true
-port     = https,http
-filter   = proxmox
+port     = https
+protocol = tcp
+filter   = pveproxy
 logpath  = /var/log/pveproxy/access.log
 maxretry = 3
 findtime = 300
 bantime  = 3600
 "
-if [ "$DRY_RUN" != "1" ] && [ ! -f /etc/fail2ban/filter.d/proxmox.conf ]; then
-    cat > /etc/fail2ban/filter.d/proxmox.conf <<'EOF'
+
+# Jail complementaire pour le port HTTP (le jail precedent ne couvre que
+# HTTPS). Sans elle, les tentatives en HTTP ne seraient pas banniees.
+# ATTENTION : ne pas utiliser de heredoc ici : un backslash residuel en
+# tete de fichier fait echouer fail2ban ('File contains no section headers').
+write_file /etc/fail2ban/jail.d/pve-web-http.conf 0644 "\
+[proxmox-http]
+enabled  = true
+port     = http
+protocol = tcp
+filter   = pveproxy
+logpath  = /var/log/pveproxy/access.log
+maxretry = 3
+findtime = 300
+bantime  = 3600
+"
+# Filtre fail2ban dedie au log d'acces pveproxy.
+# ATTENTION : fail2ban 1.x (Debian 13) exige que CHAQUE failregex contienne
+# un groupe d'echec <F-ID> ; sinon le service refuse de demarrer avec
+# 'ERROR No failure-id group in ...' et sort en status=255.
+# Bug detecte par la suite de tests fonctionnels OS (OS.SYSTEMD.NOFAILED).
+# Filtre fail2ban dedie au log d'acces pveproxy.
+# ATTENTION : fail2ban 1.x (Debian 13) refuse de demarrer si une failregex
+# ne comporte pas de groupe <HOST> ('ERROR No failure-id group') : le
+# filtre 'proxmox' du paquet echoue donc en status=255.
+# De plus, le format REEL du log pveproxy est le format Apache classique
+# ("<IP> - - [...] \"GET / HTTP/1.1\" 401 -"), et non du JSON.
+write_file /etc/fail2ban/filter.d/pveproxy.conf 0644 "\
 [Definition]
-failregex = ^\s*(?:\[\s*.*\])?\s*<HOST> \S+ - .* \[pam\].*authentication failure.*$
-            ^.* "user":".*","useragent.*","realm":.*,"status":401.*$
+# Echecs d'authentification PAM dans le journal systeme
+failregex = ^\\s*(?:\\[\\s*.*\\])?\\s*<HOST> \\S+ - .* \\[pam\\].*authentication failure.*\$
+# Reponses 401/403 sur l'interface web PVE (format Apache)
+            ^<HOST> .* \"\\S+ [^\"]*\" 401 \\S*$
+            ^<HOST> .* \"\\S+ [^\"]*\" 403 \\S*$
 ignoreregex =
-EOF
-fi
+datepattern = {^LN-BEG}
+"
+# Le filtre systeme 'proxmox' livre par fail2ban est conserve tel quel :
+# il est valide pour le journal sshd (le jail sshd par defaut l'utilise).
 exec_cmd "systemctl enable fail2ban"
 exec_cmd "systemctl restart fail2ban"
 # Le jail doit etre actif : on verifie et on relance si besoin
@@ -588,6 +623,12 @@ if [ "$DRY_RUN" != "1" ]; then
         sleep 2
     fi
     fail2ban-client status pve-web 2>&1 | head -3 >>"$LOG"
+    # Le service doit etre ACTIF : un fail2ban en echec laisse l'OS en
+    # etat 'degraded' (detecte par les tests fonctionnels OS).
+    if ! systemctl is-active --quiet fail2ban 2>/dev/null; then
+        log "ECHEC : fail2ban n'est pas actif apres le durcissement"
+        fail2ban-client -d 2>&1 | tail -20 >>"$LOG" || true
+    fi
 fi
 
 # --- CIS / ANSSI : AppArmor en mode enforce (plus de profil en complain)
