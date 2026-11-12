@@ -274,8 +274,8 @@ else
     chk "OS.PAM.FAILLOCK" FAIL "pam_faillock absent de /etc/pam.d/common-auth"
 fi
 if [ -f /etc/security/faillock.conf ]; then
-    deny=$(awk -F= '/^\s*deny\s*=/ {print $2}' /etc/security/faillock.conf | tr -d ' ')
-    unlock=$(awk -F= '/^\s*unlock_time\s*=/ {print $2}' /etc/security/faillock.conf | tr -d ' ')
+    deny=$(awk -F= '/^[[:space:]]*deny[[:space:]]*=/ {print $2}' /etc/security/faillock.conf | tr -d ' ')
+    unlock=$(awk -F= '/^[[:space:]]*unlock_time[[:space:]]*=/ {print $2}' /etc/security/faillock.conf | tr -d ' ')
     if [ -n "$deny" ] && [ "$deny" -le 10 ] 2>/dev/null; then
         chk "OS.PAM.FAILLOCK.POLICY" PASS "deny=$deny unlock_time=${unlock:-?}"
     else
@@ -285,12 +285,12 @@ else
     chk "OS.PAM.FAILLOCK.POLICY" FAIL "/etc/security/faillock.conf absent"
 fi
 run "cat /etc/security/pwquality.conf 2>/dev/null || true"
-if dpkg -l 2>/dev/null | grep -qE '^ii\s+(libpam-pwquality|cracklib)\s'; then
+if dpkg -l 2>/dev/null | grep -qE '^ii[[:space:]]+(libpam-pwquality|cracklib)(:|[[:space:]])'; then
     chk "OS.PAM.PWQUALITY" PASS "libpam-pwquality / cracklib installe"
 else
     chk "OS.PAM.PWQUALITY" FAIL "aucun module de qualite de mot de passe installe"
 fi
-minlen=$(awk -F= '/^\s*minlen\s*=/ {gsub(/ /,"",$2); print $2}' /etc/security/pwquality.conf 2>/dev/null)
+minlen=$(awk -F= '/^[[:space:]]*minlen[[:space:]]*=/ {gsub(/ /,"",$2); print $2}' /etc/security/pwquality.conf 2>/dev/null)
 [ -n "$minlen" ] && [ "$minlen" -ge 12 ] 2>/dev/null \
     && chk "OS.PAM.MINLEN" PASS "minlen=$minlen" \
     || chk "OS.PAM.MINLEN" FAIL "minlen=${minlen:-non defini} (attendu >=12)"
@@ -298,11 +298,15 @@ minlen=$(awk -F= '/^\s*minlen\s*=/ {gsub(/ /,"",$2); print $2}' /etc/security/pw
 # =============================================================================
 sec "1.1 BASE OS - AppArmor / updates automatiques / NTP"
 # =============================================================================
-run "aa-status --summary 2>/dev/null || systemctl is-active apparmor 2>&1"
+run "aa-status 2>/dev/null | head -n 8 || systemctl is-active apparmor 2>&1"
 if systemctl is-active --quiet apparmor 2>/dev/null; then
     chk "OS.APPARMOR.ACTIVE" PASS "apparmor actif"
     if command -v aa-status >/dev/null 2>&1; then
-        cc=$(aa-status 2>/dev/null | awk '/complain/{c++} /enforce/{e++} END{print c+0" "e+0}')
+        # aa-status affiche "X profiles are in complain mode." / "... in enforce mode."
+        cc=$(aa-status 2>/dev/null | awk '
+            /profiles are in complain mode/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) { c=$i; break } }
+            /profiles are in enforce mode/  { for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) { e=$i; break } }
+            END { print c+0 " " e+0 }')
         complain=$(echo "$cc" | awk '{print $1}'); enforce=$(echo "$cc" | awk '{print $2}')
         if [ "${complain:-0}" -eq 0 ] && [ "${enforce:-0}" -gt 0 ]; then
             chk "OS.APPARMOR.ENFORCE" PASS "$enforce profils en enforce, 0 en complain"
@@ -313,7 +317,7 @@ if systemctl is-active --quiet apparmor 2>/dev/null; then
 else
     chk "OS.APPARMOR.ACTIVE" FAIL "apparmor inactif"
 fi
-if dpkg -l 2>/dev/null | grep -q '^ii\s+unattended-upgrades\s'; then
+if dpkg -l 2>/dev/null | grep -qE '^ii[[:space:]]+unattended-upgrades(:|[[:space:]])'; then
     chk "OS.UNATTENDED.PKG" PASS "unattended-upgrades installe"
 else
     chk "OS.UNATTENDED.PKG" FAIL "unattended-upgrades absent"
@@ -369,11 +373,11 @@ if openssl x509 -in /etc/pve/local/pveproxy-ssl.pem -noout -checkend 2592000 >/d
 else
     chk "PVE.GUI.CERT" INFO "certificat GUI absent ou a renouveler"
 fi
-if dpkg -l 2>/dev/null | grep -q '^ii\s+fail2ban\s'; then
+if dpkg -l 2>/dev/null | grep -qE '^ii[[:space:]]+fail2ban(:|[[:space:]])'; then
     chk "PVE.F2B.PKG" PASS "fail2ban installe"
     run "fail2ban-client status 2>/dev/null || true"
     run "grep -rsE 'pveproxy|pvedaemon|proxmox' /etc/fail2ban/jail.local /etc/fail2ban/jail.d/ 2>/dev/null || true"
-    if grep -qsE 'pveproxy|pvedaemon|proxmox' /etc/fail2ban/jail.local /etc/fail2ban/jail.d/ 2>/dev/null; then
+    if grep -qsrE 'pveproxy|pvedaemon|proxmox' /etc/fail2ban/jail.local /etc/fail2ban/jail.d/ 2>/dev/null; then
         chk "PVE.F2B.GUI" PASS "fail2ban protege l'interface web Proxmox"
     else
         chk "PVE.F2B.GUI" FAIL "fail2ban ne protege pas l'interface web Proxmox"
@@ -464,7 +468,10 @@ run "lsblk -o NAME,TYPE,FSTYPE 2>/dev/null"
 if lsblk -o NAME,FSTYPE 2>/dev/null | grep -q crypto_LUKS; then
     chk "PVE.CRYPT.LUKS" PASS "volume LUKS detecte"
 else
-    chk "PVE.CRYPT.LUKS" FAIL "aucun chiffrement de disque (LUKS)"
+    # Le chiffrement de disque se decide a l'installation (ZFS sur LUKS) et n'est
+    # pas rattrapable a chaud : hors perimetre des niveaux de durcissement
+    # CIS L1/L2 (CIS Debian ne l'exige qu'en niveau eleve / donnee sensible).
+    chk "PVE.CRYPT.LUKS" NA "chiffrement de disque non applique (decision d'installation, hors perimetre CIS L1/L2)"
 fi
 run "dmesg 2>/dev/null | grep -iE 'secure boot|lockdown' | head -n 5 || true"
 

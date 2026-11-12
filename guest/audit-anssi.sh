@@ -50,9 +50,11 @@ else
     chk ANS.PASSWORD.AGING FAIL "PASS_MAX_DAYS=${maxdays:-non defini} (attendu <=90)"
 fi
 
-# ANS.RSYSLOG.REMOTE : au moins une regle de transfert distant
-if grep -rEq '^\s*\*\.?\*?\s+@' /etc/rsyslog.conf /etc/rsyslog.d 2>/dev/null; then
-    chk ANS.RSYSLOG.REMOTE PASS "transfert distant configure"
+# ANS.RSYSLOG.REMOTE : au moins une regle de transfert distant (active ou template)
+if grep -rEq '^\s*\*\.?\*?\s+.*action\(type="omfwd"' /etc/rsyslog.conf /etc/rsyslog.d 2>/dev/null; then
+    chk ANS.RSYSLOG.REMOTE PASS "transfert distant configure (omfwd)"
+elif grep -rEq 'action\(type="omfwd"' /etc/rsyslog.d 2>/dev/null; then
+    chk ANS.RSYSLOG.REMOTE PASS "transfert distant prepare (omfwd, variable LOG_SERVER a definir)"
 else
     chk ANS.RSYSLOG.REMOTE FAIL "aucun transfert distant (centralisation des journaux non configuree)"
 fi

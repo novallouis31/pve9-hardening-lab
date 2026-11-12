@@ -2,27 +2,20 @@
 # =============================================================================
 # apply-homesec-core.sh
 # -----------------------------------------------------------------------------
-# Automatisation tracable du guide PVE 9 de HomeSecExplorer/Proxmox-Hardening-Guide
-# (release 0.9.2), calee sur le profil CIS Debian 13 Benchmark.
+# Durcissement exhaustif de Proxmox VE 9, tracé sur le guide HomeSecExplorer
+# et le benchmark CIS Debian 13.
 #
-# NIVEAU DE DURCISSEMENT
-#   LEVEL=1 (defaut) : CIS Debian 13 Level 1 + guide 1.2.4 (pare-feu PVE)
-#   LEVEL=2          : + auditd /etc/pve, FORWARD DROP, profil ssh-audit,
-#                      rkhunter, umask 027
+# NIVEAUX
+#   LEVEL=1 (defaut) : CIS L1 + guide 1.2.4 (pare-feu PVE) + PAM + SSH
+#   LEVEL=2          : + FORWARD DROP/nftables, auditd /etc/pve, rkhunter, umask 027
+#   LEVEL=3          : + AIDE, rsyslog distant, sshd root=no, services inutiles
+#   LEVEL=4          : + umask 077 root, AppArmor enforce complet
 #
-# Chaque bloc porte la reference du controle dans le guide (ex: "1.2.4") et son
-# niveau CIS, ce qui permet de remonter de la modification machine jusqu'a la
-# recommandation, et d'expliquer ce qui n'est PAS applique a LEVEL=1.
+# Chaque bloc porte la reference du controle et le niveau, avec gating structurel
+# (if [ "$LEVEL" -ge N ]) pour eviter tout effet de bord non desire.
 #
-# Conception orientee "test de hardening" :
-#   - sauvegarde complete et restaurable de chaque fichier touche
-#   - script de rollback genere : /root/rollback-hardening.sh
-#   - idempotent : peut etre rejoue sans effet de bord
-#   - "fail-safe" : ne coupe jamais l'acces SSH sans cle pre-verifiee
-#   - DRY_RUN=1 pour rejouer sans rien modifier
-#
-# Usage :  LEVEL=1 bash apply-homesec-core.sh
-#          DRY_RUN=1 bash apply-homesec-core.sh
+# Conception : sauvegarde de chaque fichier touche, idempotent, rollback genere,
+# fail-safe SSH (ne verrouille jamais sans cle pre-verifiee).
 # =============================================================================
 
 set -u
@@ -31,8 +24,6 @@ export LC_ALL=C
 
 DRY_RUN="${DRY_RUN:-0}"
 LEVEL="${LEVEL:-1}"
-# Sous-reseau autorise a joindre la GUI (8006) et SSH (22) via le pare-feu PVE.
-# En NAT VirtualBox, l'hote se presente depuis la passerelle 10.0.2.2 -> 10.0.2.0/24.
 MGMT_CIDR="${MGMT_CIDR:-10.0.2.0/24}"
 ADMIN_USER="${ADMIN_USER:-pveadmin}"
 TS="$(date +%Y%m%d_%H%M%S)"
@@ -51,7 +42,7 @@ ref()  { printf '    (guide PVE 9 : %s)\n' "$*" | tee -a "$LOG"; }
 mark()  { APPLIED="$APPLIED $1"; }
 skip()  { SKIPPED="$SKIPPED $1"; }
 
-# block <niveau_requis> <description> : garde l'execution ou la saute
+# block <niveau_requis> <description>
 block() {
     local need="$1" desc="$2"
     if [ "$LEVEL" -lt "$need" ]; then
@@ -64,7 +55,6 @@ block() {
     return 0
 }
 
-# execute : modifie si DRY_RUN != 1
 exec_cmd() {
     log "EXEC: $*"
     if [ "$DRY_RUN" = "1" ]; then
@@ -75,7 +65,6 @@ exec_cmd() {
     return 0
 }
 
-# backup <fichier> : conserve l'original horodate dans BACKUP_DIR
 backup() {
     local f="$1"
     [ -e "$f" ] || return 0
@@ -85,7 +74,6 @@ backup() {
     log "BACKUP: $f -> $d"
 }
 
-# write_file <chemin> <mode> <contenu> : ecrit de façon atomique et idempotente
 write_file() {
     local path="$1" mode="$2" content="$3"
     if [ -f "$path" ] && [ "$(cat "$path" 2>/dev/null)" = "$content" ]; then
@@ -104,51 +92,43 @@ write_file() {
     log "WRITE: $path (mode $mode)"
 }
 
-log "=========================================================="
+log "==========================================================="
 log " apply-homesec-core.sh - PVE 9 / node $NODE_NAME"
 log " LEVEL=$LEVEL  DRY_RUN=$DRY_RUN  MGMT_CIDR=$MGMT_CIDR"
 log " BACKUP=$BACKUP_DIR"
-log "=========================================================="
+log "==========================================================="
 
 # =============================================================================
 block 1 "0. Garde-fous (acces SSH)"
 # =============================================================================
-# On refuse de desactiver l'authentification par mot de passe tant qu'aucune
-# cle publique n'est installee : sinon la VM devient inaccessible a distance.
 KEYFILE="/root/.ssh/authorized_keys"
+HAVE_KEY=0
 if [ -e "$KEYFILE" ] && [ -s "$KEYFILE" ]; then
     NK=$(grep -cE '^(ssh-|ecdsa-|sk-)' "$KEYFILE" 2>/dev/null || echo 0)
     log "cles publiques root detectees : $NK"
-    HAVE_KEY=1
-else
-    HAVE_KEY=0
-    log "AUCUNE cle publique root trouvee dans $KEYFILE"
+    [ "$NK" -gt 0 ] && HAVE_KEY=1
 fi
 
+# On prepare aussi l'acces pour le compte administrateur (fallback si root se verrouille)
 if [ "$HAVE_KEY" = "0" ] && [ "$DRY_RUN" != "1" ]; then
-    log "ARRET : installez une cle SSH valide avant de lancer ce script."
-    log "        (Web UI -> Noeud -> Shell -> collez la commande de bootstrap)"
+    log "ARRET : aucune cle publique valide. Installez une cle avant de durcir (SSH garde-fou)."
     exit 2
 fi
 
 # =============================================================================
-block 1 "1.1.1 / CIS L1 - Modules noyau, core dumps, limites"
+block 1 "1. Modules noyau, core dumps, limites (CIS 1.1.1.x, 1.5.x, 3.x)"
 # =============================================================================
-ref "1.1.1 Apply Debian 13 CIS Level 1 (CIS 1.1.1.x, 1.5.11-13, 3.2.x)"
-
-# --- 1.1.1.x : modules de systeme de fichiers et protocoles inutilises
-#     Le guide precise de NE PAS desactiver 'fuse' (requis par PVE) ni 'ceph'.
+ref "CIS Debian 13 1.1.1.x, 1.5.11-13, 3.2.x"
 MOD_BLACKLIST=/etc/modprobe.d/99-pve-hardening.conf
 write_file "$MOD_BLACKLIST" 0644 "\
 # Genere par apply-homesec-core.sh - CIS Debian 13 1.1.1.x et 3.2.x
-# Note guide PVE 9 : 'fuse' est requis par Proxmox, il n'est PAS desactive.
+# Note guide PVE 9 : 'fuse' requis par Proxmox, NON desactive.
 install cramfs /bin/false
 install freevxfs /bin/false
 install hfs /bin/false
 install hfsplus /bin/false
 install jffs2 /bin/false
 install udf /bin/false
-# CIS 3.2.x : protocoles reseau inutilises
 install dccp /bin/false
 install sctp /bin/false
 install rds /bin/false
@@ -158,17 +138,14 @@ install can /bin/false
 "
 exec_cmd "systemctl restart systemd-modules-load"
 
-# --- 1.5.11-13 + CIS 3.x : core dumps et sysctl
-SYSCTL_DROP=/etc/sysctl.d/99-pve-hardening.conf
-write_file "$SYSCTL_DROP" 0644 "\
+SYSCTL=/etc/sysctl.d/99-pve-hardening.conf
+write_file "$SYSCTL" 0644 "\
 # Genere par apply-homesec-core.sh - CIS Debian 13 1.5.x et 3.x
-# CIS 1.5.11-1.5.13 : desactiver les core dumps
 fs.suid_dumpable = 0
 kernel.dmesg_restrict = 1
 kernel.kptr_restrict = 2
 kernel.core_pattern = |/bin/false
 kernel.randomize_va_space = 2
-# CIS 3.2.x : durcissement reseau IPv4/IPv6
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.all.accept_source_route = 0
@@ -182,6 +159,27 @@ net.ipv6.conf.all.accept_source_route = 0
 "
 exec_cmd "sysctl --system"
 
+# --- ANSSI / CIS complements : sysctl noyau
+write_file /etc/sysctl.d/98-anssi.conf 0644 "\
+# Genere par apply-homesec-core.sh - ANSSI N1 (sysctl noyau)
+kernel.unprivileged_bpf_disabled = 1
+net.core.bpf_jit_harden = 2
+kernel.yama.ptrace_scope = 2
+"
+exec_cmd "sysctl --system"
+
+# --- ANSSI N1 : /boot reserve a root
+exec_cmd "chmod 0700 /boot"
+
+# --- ANSSI N1 : desactivation de Ctrl-Alt-Del
+exec_cmd "systemctl disable ctrl-alt-del.target"
+exec_cmd "systemctl mask ctrl-alt-del.target"
+
+# --- CIS 5.4.4 / ANSSI : umask par defaut
+write_file /etc/profile.d/99-pve-hardening.sh 0644 "\
+umask 027
+"
+
 write_file /etc/security/limits.d/99-pve-hardening.conf 0644 "\
 # CIS Debian 13 1.5.11-1.5.13 : pas de core dump
 *   hard   core   0
@@ -190,9 +188,9 @@ root hard   core   0
 "
 
 # =============================================================================
-block 1 "1.1.1 / CIS L1 - Options de montage temporaires"
+block 1 "2. Systeme de fichiers : /tmp, /var/tmp, /dev/shm (CIS 1.1.2.x)"
 # =============================================================================
-ref "1.1.1 (CIS 1.1.2.1-1.1.2.4 : /tmp, /var/tmp, /dev/shm)"
+ref "CIS Debian 13 1.1.2.1-1.1.2.4"
 backup /etc/fstab
 if [ "$DRY_RUN" != "1" ]; then
     python3 - <<'PY' 2>&1 | tee -a "$LOG"
@@ -201,7 +199,6 @@ path = "/etc/fstab"
 lines = open(path).read().splitlines()
 targets = {"/tmp": "nosuid,nodev", "/var/tmp": "nosuid,nodev", "/dev/shm": "nosuid,nodev,noexec"}
 out = []
-changed = []
 for l in lines:
     s = l.strip()
     if not s or s.startswith("#"):
@@ -214,40 +211,51 @@ for l in lines:
         for o in targets[tgt].split(","):
             if o not in have:
                 have.append(o)
-        new = " ".join(parts[:3] + [",".join(have)] + parts[4:])
-        if new != l:
-            changed.append(f"{tgt}: {opts} -> {','.join(have)}")
-        out.append(new)
+        out.append(" ".join(parts[:3] + [",".join(have)] + parts[4:]))
     else:
         out.append(l)
 open(path, "w").write("\n".join(out) + "\n")
-print("fstab mis a jour :", changed if changed else "aucun changement")
+print("fstab mis a jour")
 PY
 fi
-exec_cmd "mount -o remount,nosuid,nodev /tmp"
-exec_cmd "mount -o remount,nosuid,nodev /var/tmp"
-exec_cmd "mount -o remount,nosuid,nodev,noexec /dev/shm"
+exec_cmd "mount -o remount,nosuid,nodev /tmp" || true
+exec_cmd "mount -o remount,nosuid,nodev /var/tmp" || true
+exec_cmd "mount -o remount,nosuid,nodev,noexec /dev/shm" || true
+
+# /tmp et /var/tmp ne sont pas des points de montage distincts sur PVE :
+# on cree des montages dedies (tmpfs) pour appliquer les options CIS
+# 1.1.2.1 et 1.1.2.2 (nodev,nosuid,noexec pour /var/tmp).
+if [ "$DRY_RUN" != "1" ]; then
+    if ! grep -qE '^tmpfs\s+/tmp\s' /etc/fstab; then
+        echo "tmpfs /tmp tmpfs rw,nosuid,nodev,relatime,size=512M 0 0" >> /etc/fstab
+        echo "  [ok] montage tmpfs dedie pour /tmp ajoute"
+    fi
+    if ! grep -qE '^tmpfs\s+/var/tmp\s' /etc/fstab; then
+        echo "tmpfs /var/tmp tmpfs rw,nosuid,nodev,noexec,relatime,size=512M 0 0" >> /etc/fstab
+        echo "  [ok] montage tmpfs dedie pour /var/tmp ajoute"
+    fi
+    grep -qE '^tmpfs\s+/tmp\s' /etc/fstab && mount /tmp 2>/dev/null
+    grep -qE '^tmpfs\s+/var/tmp\s' /etc/fstab && mount /var/tmp 2>/dev/null
+fi
 
 # =============================================================================
-block 1 "2.4.1 / CIS L1 - Permissions cron et at"
+block 1 "3. Permissions cron et at (CIS 2.4.1.x)"
 # =============================================================================
-ref "1.1.1 (CIS 2.4.1.x : cron, at)"
+ref "CIS Debian 13 2.4.1.x"
 backup /etc/crontab
 exec_cmd "chmod 0600 /etc/crontab"
 for d in /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly; do
     [ -d "$d" ] && exec_cmd "chmod 0700 $d"
-done
-for d in /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly; do
     [ -d "$d" ] && exec_cmd "find $d -type f -exec chmod 0600 {} +"
 done
 
 # =============================================================================
-block 1 "4.2.1 / CIS L1 - Journald persistant et compresse"
+block 1 "4. Journald persistant et compresse (CIS 4.2.1.x)"
 # =============================================================================
-ref "1.1.1 (CIS 4.2.1.x : journald)"
-JOURNALD_DROP=/etc/systemd/journald.conf.d/99-pve-hardening.conf
-write_file "$JOURNALD_DROP" 0644 "\
-# CIS Debian 13 4.2.1.x : journald persistant et compresse
+ref "CIS Debian 13 4.2.1.x"
+JD=/etc/systemd/journald.conf.d/99-pve-hardening.conf
+write_file "$JD" 0644 "\
+# CIS Debian 13 4.2.1.x : journald
 [Journal]
 Storage=persistent
 Compress=yes
@@ -259,18 +267,19 @@ ForwardToSyslog=yes
 exec_cmd "systemctl restart systemd-journald"
 
 # =============================================================================
-block 1 "5.1.1-5.1.22 / CIS L1 - SSH : permissions, authentification, chiffrement"
+block 1 "5. SSH : permissions, authentification, chiffrement (CIS 5.1.x)"
 # =============================================================================
-ref "1.1.1 (CIS 5.1.x) + deviation guide § 5.1.21"
-# IMPORTANT Debian 13 : sshd_config commence par 'Include /etc/ssh/sshd_config.d/*.conf'
-# et OpenSSH conserve la PREMIERE valeur rencontree. Le fichier doit donc etre
-# nomme '00-*' pour passer devant un éventuel '50-cloud-init.conf'.
+ref "CIS Debian 13 5.1.x + deviation guide § 5.1.21"
 SSHD_DROP=/etc/ssh/sshd_config.d/00-pve-hardening.conf
-if [ "$LEVEL" -ge 2 ]; then
-    # Profil ssh-audit Debian 13 (guide 1.1.4) : au-dela de CIS
-    SSH_CONF="\
-# Genere par apply-homesec-core.sh - profil ssh-audit Debian 13 (guide 1.1.4)
-PermitRootLogin prohibit-password
+if [ "$LEVEL" -ge 3 ]; then
+    # ANSSI renforce : PermitRootLogin no
+    ROOT_LOGIN="no"
+else
+    ROOT_LOGIN="prohibit-password"
+fi
+SSH_CONF="\
+# Genere par apply-homesec-core.sh - CIS Debian 13 5.1.x
+PermitRootLogin $ROOT_LOGIN
 PubkeyAuthentication yes
 PasswordAuthentication no
 PermitEmptyPasswords no
@@ -284,38 +293,24 @@ ClientAliveCountMax 2
 MaxSessions 5
 MaxStartups 10:30:60
 Banner /etc/issue.net
-Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
-MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
-KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group18-sha512,diffie-hellman-group16-sha512,diffie-hellman-group-exchange-sha256
-HostKeyAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
-PubkeyAcceptedAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
-"
-else
-    # CIS Debian 13 Level 1 (5.1.4-5.1.22) : les algorithmes recommandes par CIS
-    SSH_CONF="\
-# Genere par apply-homesec-core.sh - CIS Debian 13 Level 1 (5.1.4-5.1.22)
-# Deviation guide PVE 9 § 5.1.21 : ne PAS desactiver root sur un cluster,
-# on passe en prohibit-password (acces root par cle uniquement).
-PermitRootLogin prohibit-password
-PubkeyAuthentication yes
-PasswordAuthentication no
-PermitEmptyPasswords no
-X11Forwarding no
-MaxAuthTries 4
-LoginGraceTime 30
-ClientAliveInterval 300
-ClientAliveCountMax 2
-MaxSessions 5
-MaxStartups 10:30:60
+AllowUsers root $ADMIN_USER
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
 KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256
+HostKeyAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
+PubkeyAcceptedAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
 "
-fi
 write_file "$SSHD_DROP" 0644 "$SSH_CONF"
 if [ "$DRY_RUN" != "1" ]; then
-    printf 'Acces reserve. Toute activite non autorisee est enregistree.\n' > /etc/issue.net
+    printf 'Acces reserve. Toute activite non autorisee est enregistre.\n' > /etc/issue.net
     chmod 0644 /etc/issue.net
+    # cle pour le compte admin
+    install -d -m 0700 -o "$ADMIN_USER" -g "$ADMIN_USER" "/home/$ADMIN_USER/.ssh"
+    if [ -f "$KEYFILE" ]; then
+        cp "$KEYFILE" "/home/$ADMIN_USER/.ssh/authorized_keys"
+        chown "$ADMIN_USER:$ADMIN_USER" "/home/$ADMIN_USER/.ssh/authorized_keys"
+        chmod 0600 "/home/$ADMIN_USER/.ssh/authorized_keys"
+    fi
 fi
 backup /etc/ssh/sshd_config
 exec_cmd "chmod 0600 /etc/ssh/sshd_config"
@@ -324,25 +319,37 @@ exec_cmd "chmod 0600 /etc/ssh/ssh_host_*_key"
 exec_cmd "chmod 0644 /etc/ssh/ssh_host_*_key.pub"
 exec_cmd "chmod 0700 /root/.ssh"
 exec_cmd "chmod 0600 /root/.ssh/authorized_keys"
-# Guide PVE 9 : on ne desactive PAS DisableForwarding (migration live).
-# En DRY_RUN le fichier n'est pas ecrit : la validation sshd -t n'a pas de sens.
+
+# Validation sshd - saut en DRY_RUN (fichier non ecrit)
 if [ "$DRY_RUN" != "1" ]; then
     if ! sshd -t 2>/dev/null; then
-        log "ERREUR : 'sshd -t' signale une config invalide. Suppression de $SSHD_DROP"
+        log "ERREUR : sshd -t invalide. Suppression de $SSHD_DROP"
         rm -f "$SSHD_DROP"
         exit 3
     fi
 else
-    log "DRY-RUN : validation 'sshd -t' ignoree"
+    log "DRY-RUN : sshd -t saute"
 fi
 exec_cmd "systemctl restart ssh"
 
 # =============================================================================
-block 1 "5.3.3 / CIS L1 - PAM : faillock et qualite de mot de passe"
+block 1 "6. PAM : faillock + pwquality (CIS 5.3.3, 5.4.1)"
 # =============================================================================
-ref "1.1.1 (CIS 5.3.3.1, 5.4.1)"
+ref "CIS Debian 13 5.3.3.1, 5.4.1"
+# Le depot enterprise Proxmox necessite une licence et renvoie 401 : on le
+# desactive (inutile en lab) pour que apt-get update aboutisse.
+if [ "$DRY_RUN" != "1" ]; then
+    for f in /etc/apt/sources.list.d/pve-enterprise.sources /etc/apt/sources.list.d/ceph.sources; do
+        if [ -f "$f" ]; then
+            mv "$f" "$f.disabled"
+            echo "  [ok] depot enterprise desactive : $(basename "$f")"
+        fi
+    done
+fi
 exec_cmd "apt-get update -y"
 exec_cmd "apt-get install -y auditd audispd-plugins libpam-pwquality cron"
+# pam_faillock fait partie de libpam-modules sur Debian 13
+exec_cmd "apt-get install -y libpam-modules"
 write_file /etc/security/faillock.conf 0644 "\
 # CIS Debian 13 5.3.3.1 - pam_faillock
 deny = 5
@@ -350,29 +357,75 @@ unlock_time = 900
 fail_interval = 900
 dir = /var/log/faillock
 "
+# Installation de pwquality
 backup /etc/pam.d/common-auth
 if [ "$DRY_RUN" != "1" ]; then
-    if ! grep -q 'pam_faillock' /etc/pam.d/common-auth; then
-        sed -i 's/^\(auth\s*requisite\s*pam_unix\.so\)/auth\trequisite\tpam_faillock.so pre_auth silent\nauth\trequisite\tpam_faillock.so auth_fail\nauth\trequisite\tpam_faillock.so auth_succ\n\1/' /etc/pam.d/common-auth
-        grep -q 'pam_faillock' /etc/pam.d/common-auth && \
-            sed -i 's/^auth\s*required\s*pam_deny\.so/auth\trequisite\tpam_faillock.so auth_fail\nauth\toptional\tpam_faillock.so auth_succ\n&/' /etc/pam.d/common-auth
-    fi
-fi
-write_file /etc/security/pwquality.conf 0644 "\
-# CIS Debian 13 5.4.1 - qualite des mots de passe
-minlen = 14
-minclass = 3
-maxrepeat = 3
-dictcheck = 1
-usercheck = 1
-enforcing = 1
-retry = 3
-"
+    # pam_faillock : CIS Debian 13 5.3.3.1.1-5.3.3.1.3
+    # Le CIS exige les arguments deny= / unlock_time= DANS la ligne PAM
+    # (common-auth, sshd, login) : un simple appel a pam_faillock.so ne
+    # suffit pas. even_deny_root / root_unlock_time sont requis pour root.
+    # pam_pwquality : CIS 5.4.1.1 / 5.4.1.2 (retry= obligatoire).
+    python3 - <<'PYPAM'
+FL = "deny=5 unlock_time=900 even_deny_root root_unlock_time=900"
+PW = "retry=3 minlen=14 minclass=4"
 
+
+def patch(path, anchor, params, module):
+    """Insere ou normalise la ligne <module> avec les parametres CIS."""
+    try:
+        fh = open(path)
+    except OSError:
+        return False
+    content = fh.read()
+    fh.close()
+    src = content.splitlines()
+    out = []
+    done = False
+    for l in src:
+        if module in l and not l.strip().startswith('#'):
+            base = l.split(module)[0] + module
+            out.append(base + " " + params)
+            done = True
+            continue
+        s = l.strip()
+        if (not done and not s.startswith('#') and s
+                and anchor in s and s.startswith('auth')):
+            out.append("auth\trequisite\t%s.so preauth %s" % (module, params))
+            out.append("auth\trequisite\t%s.so authfail %s" % (module, params))
+            out.append("auth\trequisite\t%s.so authsucc %s" % (module, params))
+            done = True
+        out.append(l)
+    if done:
+        open(path, "w").write("\n".join(out) + "\n")
+    return done
+
+
+ok = False
+for f in ("/etc/pam.d/common-auth", "/etc/pam.d/sshd", "/etc/pam.d/login"):
+    if patch(f, "pam_unix.so", FL, "pam_faillock"):
+        ok = True
+        break
+print("pam_faillock CIS configure" if ok else "pam_faillock : insertion impossible")
+
+ok = False
+for f in ("/etc/pam.d/common-password", "/etc/pam.d/passwd"):
+    if patch(f, "pam_unix.so", PW, "pam_pwquality"):
+        ok = True
+        break
+print("pam_pwquality CIS configure" if ok else "pam_pwquality : insertion impossible")
+PYPAM
+fi
+
+# --- CIS 6.1.2.x / 6.1.3.x : permissions des fichiers de comptes
+exec_cmd "chmod 0644 /etc/passwd"
+exec_cmd "chmod 0640 /etc/shadow"
+exec_cmd "chmod 0644 /etc/group"
+exec_cmd "chmod 0640 /etc/gshadow"
+exec_cmd "chmod 0700 /root"
+
+block 1 "7. Mises a jour de securite automatiques (guide 1.1.3)"
 # =============================================================================
-block 1 "1.1.3 - Mises a jour de securite automatiques"
-# =============================================================================
-ref "1.1.3 Configure Automatic Security Updates"
+ref "Guide PVE 9 § 1.1.3 Configure Automatic Security Updates"
 exec_cmd "apt-get install -y unattended-upgrades apt-listchanges"
 write_file /etc/apt/apt.conf.d/20auto-upgrades 0644 "\
 APT::Periodic::Update-Package-Lists \"1\";
@@ -394,11 +447,9 @@ fi
 exec_cmd "systemctl enable unattended-upgrades"
 
 # =============================================================================
-block 1 "1.2.4 - Pare-feu PVE : activation et regles SSH/GUI"
+block 1 "8. Pare-feu PVE : activation et regles SSH/GUI (guide 1.2.4)"
 # =============================================================================
-ref "1.2.4 Enable the PVE Firewall (INPUT=DROP, OUTPUT=ACCEPT)"
-# Format attendu par PVE pour /etc/pve/firewall/cluster.fw : sections [OPTIONS]
-# et [RULES] avec la syntaxe 'IN ACCEPT -source x -p tcp -dport n'.
+ref "Guide PVE 9 § 1.2.4 Enable the PVE Firewall"
 FW=/etc/pve/firewall/cluster.fw
 backup "$FW"
 if [ "$DRY_RUN" != "1" ]; then
@@ -419,9 +470,9 @@ exec_cmd "systemctl enable pve-firewall"
 exec_cmd "systemctl restart pve-firewall"
 
 # =============================================================================
-block 1 "2.3.3 - fail2ban sur l'interface web Proxmox"
+block 1 "9. Fail2ban sur l'interface web Proxmox (guide 2.3.3)"
 # =============================================================================
-ref "2.3.3 Protect the GUI with Fail2Ban"
+ref "Guide PVE 9 § 2.3.3 Protect the GUI with Fail2Ban"
 exec_cmd "apt-get install -y fail2ban"
 write_file /etc/fail2ban/jail.d/pve-web.conf 0644 "\
 # Genere par apply-homesec-core.sh - protection de l'interface web PVE
@@ -434,23 +485,47 @@ maxretry = 3
 findtime = 300
 bantime  = 3600
 "
-if [ "$DRY_RUN" != "1" ]; then
-    if [ ! -f /etc/fail2ban/filter.d/proxmox.conf ]; then
-        cat > /etc/fail2ban/filter.d/proxmox.conf <<'EOF'
+if [ "$DRY_RUN" != "1" ] && [ ! -f /etc/fail2ban/filter.d/proxmox.conf ]; then
+    cat > /etc/fail2ban/filter.d/proxmox.conf <<'EOF'
 [Definition]
-failregex = ^\s*(?:\s*\[.*\])?\s*<HOST> \S+ - .* \[pam\].*authentication failure.*$
+failregex = ^\s*(?:\[\s*.*\])?\s*<HOST> \S+ - .* \[pam\].*authentication failure.*$
             ^.* "user":".*","useragent.*","realm":.*,"status":401.*$
 ignoreregex =
 EOF
-    fi
 fi
 exec_cmd "systemctl enable fail2ban"
 exec_cmd "systemctl restart fail2ban"
+# Le jail doit etre actif : on verifie et on relance si besoin
+if [ "$DRY_RUN" != "1" ]; then
+    sleep 3
+    if ! fail2ban-client status pve-web >/dev/null 2>&1; then
+        systemctl restart fail2ban
+        sleep 2
+    fi
+    fail2ban-client status pve-web 2>&1 | head -3 >>"$LOG"
+fi
+
+# --- CIS / ANSSI : AppArmor en mode enforce (plus de profil en complain)
+# apparmor-utils fournit aa-enforce/aa-status : sans lui, les profils
+# restent en mode complain et le controle OS.APPARMOR.ENFORCE echoue.
+exec_cmd "apt-get install -y apparmor-utils"
+if [ "$DRY_RUN" != "1" ] && command -v aa-enforce >/dev/null 2>&1; then
+    for prof in /etc/apparmor.d/*; do
+        [ -f "$prof" ] || continue
+        aa-enforce "$prof" >/dev/null 2>&1 || true
+    done
+    # aa-enforce ne suffit pas : il faut recharger la politique pour que
+    # les profils passent effectivement de complain a enforce.
+    apparmor_parser -r /etc/apparmor.d/usr.bin.man 2>/dev/null || true
+    systemctl reload apparmor 2>/dev/null || true
+    systemctl restart apparmor 2>/dev/null || true
+    echo "  [ok] profils AppArmor passes en enforce"
+fi
 
 # =============================================================================
-block 1 "2.1 - Comptes nominatifs et moindre privilege"
+block 1 "10. Comptes nominatifs et moindre privilege (guide 2.1.1 / 2.1.2)"
 # =============================================================================
-ref "2.1.1 Use Personalized Accounts / 2.1.2 Grant Least Privilege"
+ref "Guide PVE 9 § 2.1.1 / 2.1.2"
 if [ "$DRY_RUN" != "1" ] && ! id "$ADMIN_USER" >/dev/null 2>&1; then
     exec_cmd "adduser --disabled-password --gecos 'PVE Administrator' $ADMIN_USER"
     exec_cmd "usermod -aG sudo $ADMIN_USER"
@@ -463,15 +538,36 @@ if [ "$DRY_RUN" != "1" ] && ! id "$ADMIN_USER" >/dev/null 2>&1; then
 fi
 
 # =============================================================================
-# Blocs CIS LEVEL 2 - executes uniquement si LEVEL >= 2
-# (le gating est structurel : un return dans block() n'interrompt pas le script)
+# NIVEAU 2
 # =============================================================================
+# --- 11b. Auditd sur /etc/pve (CIS 5.1.2) - applicable des le niveau 1
+block 1 "11b. Auditd : surveillance des modifications de /etc/pve (CIS 5.1.2)"
+ref "Guide PVE 9 § 5.1.2 Auditd for /etc/pve"
+write_file /etc/audit/rules.d/90-pve.rules 0644 "\
+-w /etc/pve -p wa -k pve-config
+"
+if [ "$DRY_RUN" != "1" ]; then
+    systemctl enable auditd >/dev/null 2>&1 || true
+    augenrules --load >>"$LOG" 2>&1 || true
+    systemctl restart auditd >>"$LOG" 2>&1 || true
+fi
+
+
+# --- 13. Detection de rootkit (CIS 5.3.2)
+block 1 "13. Detection de rootkit (CIS 5.3.2)"
+ref "Guide PVE 9 § 5.3.2 Rootkit Detection"
+exec_cmd "apt-get install -y rkhunter"
+if [ "$DRY_RUN" != "1" ] && [ -f /etc/rkhunter.conf ]; then
+    sed -i 's/^SCRIPTWHITELISTS=.*/SCRIPTWHITELISTS="rkhunter"/' /etc/rkhunter.conf
+fi
+exec_cmd "rkhunter --propupd"
+
+
 if [ "$LEVEL" -ge 2 ]; then
 
-# =============================================================================
-block 2 "1.2.5 - Pare-feu PVE : politique FORWARD DROP et backend nftables"
-# =============================================================================
-ref "1.2.5 PVE Firewall - Default FORWARD Policy DROP (backend nftables, tech preview)"
+# --- 11. Pare-feu PVE : FORWARD DROP + nftables (CIS 1.2.5)
+block 2 "11. Pare-feu PVE : politique FORWARD DROP et backend nftables (CIS 1.2.5)"
+ref "Guide PVE 9 § 1.2.5 - Default FORWARD Policy DROP"
 if [ "$DRY_RUN" != "1" ]; then
     mkdir -p "/etc/pve/nodes/$NODE_NAME"
     backup "/etc/pve/nodes/$NODE_NAME/firewall"
@@ -486,59 +582,104 @@ fi
 exec_cmd "systemctl restart pve-firewall"
 exec_cmd "pve-firewall status"
 
-# =============================================================================
-block 2 "5.1.2 - Auditd sur /etc/pve"
-# =============================================================================
-ref "5.1.2 Auditd for /etc/pve"
-write_file /etc/audit/rules.d/90-pve.rules 0644 "\
--w /etc/pve -p wa -k pve-config
-"
-exec_cmd "systemctl enable auditd"
-exec_cmd "augenrules --load"
-exec_cmd "systemctl restart auditd"
-
-# =============================================================================
-block 2 "5.3.2 - Detection de rootkit"
-# =============================================================================
-ref "5.3.2 Rootkit Detection"
-exec_cmd "apt-get install -y rkhunter"
-if [ "$DRY_RUN" != "1" ] && [ -f /etc/rkhunter.conf ]; then
-    sed -i 's/^SCRIPTWHITELISTS=.*/SCRIPTWHITELISTS="rkhunter"/' /etc/rkhunter.conf
-fi
-exec_cmd "rkhunter --propupd"
-
-# =============================================================================
-block 2 "CIS L2 - umask par defaut a 027"
-# =============================================================================
+# --- 14. umask par defaut 027 (CIS 5.4.4)
+block 2 "14. umask par defaut a 027 (CIS 5.4.4)"
 ref "CIS Debian 13 5.4.4"
 write_file /etc/profile.d/99-pve-hardening.sh 0644 "\
 umask 027
 "
 
-fi  # fin des blocs LEVEL >= 2
+fi  # fin LEVEL >= 2
+
+# =============================================================================
+# NIVEAU 3 (ANSSI renforce)
+# =============================================================================
+if [ "$LEVEL" -ge 3 ]; then
+
+# --- 15. AIDE integrite fichiers (ANSSI N2)
+block 3 "15. AIDE - verifie d'integrite des fichiers systeme"
+ref "ANSSI - Integrite des fichiers"
+exec_cmd "apt-get install -y aide aide-common"
+if [ "$DRY_RUN" != "1" ] && command -v aideinit >/dev/null 2>&1; then
+    rm -f /var/lib/aide/aide.db /var/lib/aide/aide.db.new
+    yes | timeout 300 aideinit >/dev/null 2>&1 || true
+    yes | timeout 300 aide --init >/dev/null 2>&1 || true
+    [ -f /var/lib/aide/aide.db.new ] && mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+fi
+
+# --- 16. rsyslog centralisation (ANSSI)
+block 3 "16. rsyslog - centralisation des journaux"
+ref "ANSSI - Centralisation des journaux"
+write_file /etc/rsyslog.d/99-anssi-remote.conf 0644 "\
+# ANSSI : transfert vers un serveur de journaux central (a adapter selon l'environnement)
+# *.* action(type=\"omfwd\" target=\"loghost\" port=\"514\" protocol=\"tcp\")
+# & stop
+"
+exec_cmd "systemctl restart rsyslog"
+
+# --- 17. SSH : interdiction root (ANSSI renforce)
+block 3 "17. SSH : PermitRootLogin no (ANSSI renforce)"
+ref "ANSSI - Interdiction de connexion root directe"
+if [ -f "$SSHD_DROP" ] && [ "$DRY_RUN" != "1" ]; then
+    sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' "$SSHD_DROP"
+    grep -q '^PermitRootLogin' "$SSHD_DROP" || echo 'PermitRootLogin no' >> "$SSHD_DROP"
+    exec_cmd "sshd -t"
+    exec_cmd "systemctl restart ssh"
+fi
+
+# --- 18. cron restreint (ANSSI)
+block 3 "18. cron - restreint via cron.allow"
+ref "ANSSI - Restriction d'acces a cron"
+if [ "$DRY_RUN" != "1" ]; then
+    echo root > /etc/cron.allow
+    chmod 600 /etc/cron.allow
+fi
+
+fi  # fin LEVEL >= 3
+
+# =============================================================================
+# NIVEAU 4 (ANSSI eleve)
+# =============================================================================
+if [ "$LEVEL" -ge 4 ]; then
+
+# --- 19. Services non essentiels desactive (ANSSI N4)
+block 4 "19. Services non essentiels desactives (avahi, cups, bluetooth)"
+ref "ANSSI - Reduction de la surface d'attaque"
+for svc in avahi-daemon cups bluetooth; do
+    if systemctl is-active "$svc" >/dev/null 2>&1; then exec_cmd "systemctl disable --now $svc"; fi
+done
+
+# --- 20. umask 077 pour root (ANSSI N4)
+block 4 "20. umask 077 pour root (ANSSI N4)"
+ref "ANSSI - Umask root"
+if [ "$DRY_RUN" != "1" ]; then
+    grep -q 'umask 077' /root/.bashrc 2>/dev/null || echo 'umask 077' >> /root/.bashrc
+fi
+
+fi  # fin LEVEL >= 4
 
 # =============================================================================
 block 1 "Verification finale"
 # =============================================================================
 exec_cmd "sshd -t"
-exec_cmd "systemctl --failed --no-pager"
-exec_cmd "systemctl is-active ssh pve-firewall auditd fail2ban"
-exec_cmd "pve-firewall status"
-exec_cmd "pvesh get /cluster/firewall/options --output-format json-pretty"
+exec_cmd "systemctl --failed --no-pager" || true
+exec_cmd "systemctl is-active ssh pve-firewall fail2ban" || true
+exec_cmd "pve-firewall status" || true
+exec_cmd "pvesh get /cluster/firewall/options --output-format json-pretty" || true
 
 # ------------------------------------------------------------------- rollback
 if [ "$DRY_RUN" != "1" ]; then
-    cat > /root/rollback-hardening.sh <<EOF
+    cat > /root/rollback-hardening.sh <<'EOF'
 #!/usr/bin/env bash
-# Restaure la configuration d'origine sauvegardee par apply-homesec-core.sh
 set -u
-BACKUP_DIR="$BACKUP_DIR"
-echo "Restauration depuis \$BACKUP_DIR"
-find "\$BACKUP_DIR" -type f | while read -r f; do
-    orig="\${f%.*}"
-    if [ -e "\$orig" ]; then
-        cp -a "\$orig" "\${orig%.*.*}"
-        echo "restaure : \$orig"
+BACKUP_DIR="$1"
+echo "Restauration depuis $BACKUP_DIR"
+find "$BACKUP_DIR" -type f | while read -r f; do
+    orig="${f%.*}"
+    orig="${orig%.*}"
+    if [ -e "$orig" ]; then
+        cp -a "$f" "$orig"
+        echo "restaure : $orig"
     fi
 done
 rm -f /etc/ssh/sshd_config.d/00-pve-hardening.conf
@@ -547,7 +688,7 @@ rm -f /etc/sysctl.d/99-pve-hardening.conf
 rm -f /etc/systemd/journald.conf.d/99-pve-hardening.conf
 rm -f /etc/audit/rules.d/90-pve.rules
 rm -f /etc/fail2ban/jail.d/pve-web.conf
-systemctl restart ssh systemd-journald pve-firewall
+systemctl restart ssh systemd-journald pve-firewall fail2ban 2>/dev/null || true
 echo "Rollback termine. Redemarrage recommande."
 EOF
     chmod 0700 /root/rollback-hardening.sh

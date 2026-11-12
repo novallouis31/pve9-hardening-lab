@@ -49,6 +49,8 @@ param(
     [int]$Level        = 1,
     [int]$AbuaLevel    = 3,
     [string]$AuditExtra = '',
+    [int]$SshTimeout   = 3600,
+    [switch]$RunFunc,
     [switch]$SkipVendorVerify
 )
 
@@ -65,6 +67,10 @@ $knownHosts = Join-Path $labRoot '.keys\known_hosts'
 
 New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 
+# Timeout d'execution SSH : les installations de paquets (apt) et les scripts
+# de durcissement peuvent depasser plusieurs minutes.
+$env:SSH_TIMEOUT = [string]$SshTimeout
+
 $sshOpts = @(
     '-i', $KeyPath,
     '-p', $SshPort,
@@ -78,8 +84,15 @@ $sshOpts = @(
 function Write-Step { param([string]$m) Write-Host "`n=== $m ===" -ForegroundColor Cyan }
 
 function Test-Ssh {
-    & ssh @sshOpts "$User@$SshHost" 'true' 2>$null
-    return ($LASTEXITCODE -eq 0)
+    $python = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
+    $tool = Join-Path $scriptDir 'ssh-tool.py'
+    $args = @('test', $SshHost, $SshPort, $User, $KeyPath)
+    try {
+        & $python $tool @args 2>$null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
 }
 
 function Invoke-Ssh {
@@ -87,28 +100,31 @@ function Invoke-Ssh {
         [Parameter(Mandatory = $true)][string]$Command,
         [string[]]$StandardInput
     )
-    $outFile = [System.IO.Path]::GetTempFileName()
+    $python = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
+    $tool = Join-Path $scriptDir 'ssh-tool.py'
     $errFile = [System.IO.Path]::GetTempFileName()
     try {
+        $stdinArg = ''
         if ($StandardInput) {
-            $payload = ($StandardInput -join "`n") + "`n"
-            $payload | & ssh @sshOpts "$User@$SshHost" $Command 1> $outFile 2> $errFile
-        } else {
-            & ssh @sshOpts "$User@$SshHost" $Command 1> $outFile 2> $errFile
+            $stdinArg = ($StandardInput -join "`n") + "`n"
         }
+        $args = @('exec', $SshHost, $SshPort, $User, $KeyPath, $Command, $stdinArg)
+        $out = & $python $tool @args 2> $errFile
         $code = $LASTEXITCODE
-        $out = (Get-Content $outFile -Raw -ErrorAction SilentlyContinue)
         $err = (Get-Content $errFile -Raw -ErrorAction SilentlyContinue)
+        if ($out -is [array]) { $out = ($out -join "`n") }
         return [pscustomobject]@{ ExitCode = $code; Out = $out; Err = $err }
     } finally {
-        Remove-Item $outFile, $errFile -ErrorAction SilentlyContinue
+        Remove-Item $errFile -ErrorAction SilentlyContinue
     }
 }
 
 function Copy-ToGuest {
     param([string]$Local, [string]$Remote)
-    & scp -P $SshPort -i $KeyPath -o 'StrictHostKeyChecking=no' -o "UserKnownHostsFile=$knownHosts" `
-        -o 'LogLevel=ERROR' $Local "$User@$SshHost`:$Remote" 2>&1 | Out-Null
+    $python = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
+    $tool = Join-Path $scriptDir 'ssh-tool.py'
+    $args = @('put', $SshHost, $SshPort, $User, $KeyPath, $Local, $Remote)
+    & $python $tool @args 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Echec du transfert de $Local vers $Remote" }
     Write-Host "  transfere : $(Split-Path -Leaf $Local) -> $Remote" -ForegroundColor DarkGray
 }
@@ -147,6 +163,40 @@ function Invoke-Bootstrap {
 }
 
 # --------------------------------------------------------------- phase: baseline
+function Invoke-FuncTest {
+    param([string]$Label)
+
+    Assert-Ssh
+    Copy-ToGuest (Join-Path $guestDir 'func-test-pve.sh') '/root/func-test-pve.sh'
+    Invoke-Ssh -Command 'chmod +x /root/func-test-pve.sh' | Out-Null
+
+    $remote = "/tmp/func-$Label"
+    Write-Host "  tests fonctionnels ($Label)..." -ForegroundColor DarkGray
+    # Le code de sortie est le nombre d'echecs : on ne le considere pas comme fatal
+    $res = Invoke-Ssh -Command "bash /root/func-test-pve.sh $remote"
+    $failures = @($res.Out -split "`n" | Where-Object { $_ -match '^@@TEST\s+\S+\s+FAIL' }).Count
+
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $dir = Join-Path $artifacts "func-$Label-$stamp"
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $local = Join-Path $dir 'fonctionnel.txt'
+    $py = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
+    $tool = Join-Path $scriptDir 'ssh-tool.py'
+    # Le rapport porte un nom horodate : on le recupere via ls puis on le telecharge.
+    $ls = Invoke-Ssh -Command "ls -1 $remote 2>/dev/null | grep 'fonctionnel.*\.txt' | head -1"
+    $remoteFile = ($ls.Out -split "`n" | Where-Object { $_ -match 'fonctionnel.*\.txt' } | Select-Object -First 1)
+    if ($remoteFile) {
+        $remoteFile = $remoteFile.Trim()
+        $gargs = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/$remoteFile", $local)
+        & $py $tool @gargs 2>&1 | Out-Null
+        if (-not (Test-Path $local)) { Write-Warning "Telechargement du rapport fonctionnel echoue." }
+    } else {
+        Write-Warning "Aucun rapport fonctionnel trouve dans $remote"
+    }
+    Write-Host ("  rapport fonctionnel : {0} ({1} echec(s))" -f $local, $failures) -ForegroundColor $(if ($failures) { 'Yellow' } else { 'Green' })
+    return $local
+}
+
 function Invoke-Audit {
     param([string]$Label, [string]$AuditExtra = '')
 
@@ -176,11 +226,13 @@ function Invoke-Audit {
     $dir    = Join-Path $artifacts "$Label-$stamp"
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
-    # On recupere le fichier produced par le script (checks.tsv + audit.txt)
-    & scp -P $SshPort -i $KeyPath -o 'StrictHostKeyChecking=no' -o "UserKnownHostsFile=$knownHosts" `
-        -o 'LogLevel=ERROR' "$User@$SshHost`:$remote/audit.txt" (Join-Path $dir 'audit.txt') 2>&1 | Out-Null
-    & scp -P $SshPort -i $KeyPath -o 'StrictHostKeyChecking=no' -o "UserKnownHostsFile=$knownHosts" `
-        -o 'LogLevel=ERROR' "$User@$SshHost`:$remote/checks.tsv" (Join-Path $dir 'checks.tsv') 2>&1 | Out-Null
+    # On recupere le fichier produit par le script (checks.tsv + audit.txt)
+    $python = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
+    $tool = Join-Path $scriptDir 'ssh-tool.py'
+    $args1 = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/audit.txt", (Join-Path $dir 'audit.txt'))
+    & $python $tool @args1 2>&1 | Out-Null
+    $args2 = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/checks.tsv", (Join-Path $dir 'checks.tsv'))
+    & $python $tool @args2 2>&1 | Out-Null
 
     $summary = ($res.Out -split "`n" | Where-Object { $_ -match '^PASS=' }) -join ''
     Write-Host "  rapport : $dir\audit.txt" -ForegroundColor Green
@@ -256,7 +308,7 @@ function Invoke-Apply {
 
 # ---------------------------------------------------------------- phase: verify
 function Invoke-Verify {
-    param([string]$AuditExtra = '')
+    param([string]$AuditExtra = '', [string]$FuncBefore = '', [string]$FuncAfter = '')
     $dir = Invoke-Audit -Label 'after' -AuditExtra $AuditExtra
     $baseline = Get-ChildItem $artifacts -Directory -Filter 'baseline-*' |
                 Sort-Object Name | Select-Object -Last 1
@@ -265,7 +317,12 @@ function Invoke-Verify {
         return
     }
     Write-Step "compare - $([System.IO.Path]::GetFileName($baseline.FullName)) vs $([System.IO.Path]::GetFileName($dir))"
-    & (Join-Path $scriptDir 'compare.ps1') -Before $baseline.FullName -After $dir
+    $cargs = @{ Before = $baseline.FullName; After = $dir }
+    if ($FuncBefore -and $FuncAfter) {
+        $cargs['BeforeFunc'] = $FuncBefore
+        $cargs['AfterFunc'] = $FuncAfter
+    }
+    & (Join-Path $scriptDir 'compare.ps1') @cargs
 }
 
 # ------------------------------------------------------------------- dispatch
@@ -277,13 +334,30 @@ if (-not $SkipVendorVerify) {
 
 switch ($Phase) {
     'bootstrap' { Invoke-Bootstrap }
-    'baseline'  { Invoke-Audit -Label 'baseline' -AuditExtra $AuditExtra | Out-Null }
+    'baseline'  {
+        Invoke-Audit -Label 'baseline' -AuditExtra $AuditExtra | Out-Null
+        if ($RunFunc) { Invoke-FuncTest -Label 'before' | Out-Null }
+    }
     'apply'     { Invoke-Apply }
-    'verify'    { Invoke-Verify -AuditExtra $AuditExtra }
+    'verify'    {
+        $fb = ''
+        $fa = ''
+        if ($RunFunc) {
+            $fa = Invoke-FuncTest -Label 'after'
+            $fbefore = Get-ChildItem $artifacts -Directory -Filter 'func-before-*' |
+                       Sort-Object Name | Select-Object -Last 1
+            if ($fbefore) { $fb = Join-Path $fbefore.FullName 'fonctionnel.txt' }
+        }
+        Invoke-Verify -AuditExtra $AuditExtra -FuncBefore $fb -FuncAfter $fa
+    }
     'all'       {
         Invoke-Audit -Label 'baseline' -AuditExtra $AuditExtra | Out-Null
+        $fb = ''
+        if ($RunFunc) { $fb = Invoke-FuncTest -Label 'before' }
         Invoke-Apply
-        Invoke-Verify -AuditExtra $AuditExtra
+        $fa = ''
+        if ($RunFunc) { $fa = Invoke-FuncTest -Label 'after' }
+        Invoke-Verify -AuditExtra $AuditExtra -FuncBefore $fb -FuncAfter $fa
     }
 }
 

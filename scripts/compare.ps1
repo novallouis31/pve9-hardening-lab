@@ -25,6 +25,9 @@ param(
     [Parameter(Mandatory = $true)][string]$After,
     [string]$ReportPath,
     [string]$PdfPath,
+    [string]$Title = 'Comparatif de hardening - Proxmox VE 9',
+    [string]$BeforeFunc,   # rapport fonctionnel AVANT (fichier .txt)
+    [string]$AfterFunc,    # rapport fonctionnel APRES (fichier .txt)
     [switch]$NoPdf
 )
 
@@ -105,6 +108,46 @@ if (-not $ReportPath) { $ReportPath = Join-Path (Split-Path -Parent $After) "com
 if (-not $PdfPath)    { $PdfPath    = [System.IO.Path]::ChangeExtension($ReportPath, '.pdf') }
 $HtmlPath = [System.IO.Path]::ChangeExtension($ReportPath, '.html')
 
+# ------------------------------------------- tests fonctionnels (avant/apres)
+function Read-FuncTests {
+    param([string]$File)
+    $map = [ordered]@{}
+    if (-not $File) { return $map }
+    if (-not (Test-Path $File)) {
+        Write-Warning "Rapport fonctionnel introuvable : $File"
+        return $map
+    }
+    foreach ($line in (Get-Content $File)) {
+        if ($line -match '^@@TEST\s+(\S+)\s+(\S+)\s*(.*)$') {
+            $map[$Matches[1]] = [pscustomobject]@{
+                Id = $Matches[1]; Status = $Matches[2]; Detail = $Matches[3]
+            }
+        }
+    }
+    return $map
+}
+
+$funcBefore = Read-FuncTests $BeforeFunc
+$funcAfter  = Read-FuncTests $AfterFunc
+$funcRegression = 0
+$funcImprovement = 0
+if ($funcBefore.Count -and $funcAfter.Count) {
+    foreach ($id in $funcAfter.Keys) {
+        if (-not $funcBefore.Contains($id)) { continue }
+        $b = $funcBefore[$id].Status; $a = $funcAfter[$id].Status
+        if ($b -eq $a) { continue }
+        if ($b -eq 'PASS' -and $a -ne 'PASS') { $funcRegression++ }
+        else { $funcImprovement++ }
+    }
+    $fbp = @($funcBefore.Values | Where-Object { $_.Status -eq 'PASS' }).Count
+    $fap = @($funcAfter.Values  | Where-Object { $_.Status -eq 'PASS' }).Count
+    Write-Host ""
+    Write-Host "=== Tests fonctionnels ===" -ForegroundColor Cyan
+    Write-Host ("Avant : PASS={0} | Apres : PASS={1}" -f $fbp, $fap)
+    Write-Host ("Regressions fonctionnelles : {0}" -f $funcRegression) -ForegroundColor $(if ($funcRegression) { 'Red' } else { 'Green' })
+    Write-Host ("Ameliorations fonctionnelles : {0}" -f $funcImprovement)
+}
+
 $meta = [ordered]@{
     beforeDir = $Before; afterDir = $After
     stamp = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
@@ -154,9 +197,27 @@ $t = [System.Collections.ArrayList]@()
 foreach ($r in $rows) { [void]$t.Add($r) }
 $mdTables['Recapitulatif complet - tous les controles'] = $t
 
+# ------------------------------------------------- tableau des tests fonctionnels
+if ($funcBefore.Count -and $funcAfter.Count) {
+    $t = [System.Collections.ArrayList]@()
+    [void]$t.Add(@('#','Test fonctionnel','Avant','Apres','Evolution','Detail (apres)'))
+    $i = 0
+    foreach ($id in ($funcAfter.Keys | Sort-Object)) {
+        $i++
+        $a = $funcAfter[$id]
+        $bs = if ($funcBefore.Contains($id)) { $funcBefore[$id].Status } else { '-' }
+        $evol = if ($bs -eq $a.Status) { 'inchange' }
+                elseif ($bs -eq 'PASS' -and $a.Status -ne 'PASS') { 'REGRESSION' }
+                elseif ($bs -ne 'PASS' -and $a.Status -eq 'PASS') { 'amelioration' }
+                else { 'modifie' }
+        [void]$t.Add(@("$i", "``$id``", $bs, $a.Status, $evol, $a.Detail))
+    }
+    $mdTables['Tests fonctionnels - avant / apres durcissement'] = $t
+}
+
 # ------------------------------------------------------------------- rendu MD
 $md = @()
-$md += "# Comparatif de hardening - Proxmox VE 9"
+$md += "# $Title"
 $md += ""
 $md += "- **Avant** : ``$Before``"
 $md += "- **Apres** : ``$After``"
@@ -170,6 +231,12 @@ $md += "| Controles conformes (PASS) | $pb | $pa | $(if ($delta -ge 0) { '+' } e
 $md += "| Controles en echec (FAIL) | $fb | $fa | $(if (-$delta -ge 0) { '+' } else { '' })(-$delta) |"
 $md += "| Regressions | - | $($meta.regressions) | |"
 $md += "| Ameliorations | - | $($meta.improvements) | |"
+if ($funcBefore.Count -and $funcAfter.Count) {
+    $fbp = @($funcBefore.Values | Where-Object { $_.Status -eq 'PASS' }).Count
+    $fap = @($funcAfter.Values  | Where-Object { $_.Status -eq 'PASS' }).Count
+    $md += "| Tests fonctionnels PASS | $fbp | $fap | $(if ($fap -ge $fbp) { '+' } else { '' })$($fap - $fbp) |"
+    $md += "| Regressions fonctionnelles | - | $funcRegression | |"
+}
 $md += ""
 foreach ($k in $mdTables.Keys) {
     $t = $mdTables[$k]
@@ -257,16 +324,23 @@ $sumHtml += "<div><div class=""v"">$pa</div><div class=""l"">PASS apres</div></d
 $sumHtml += "<div><div class=""v $(if ($delta -ge 0) { 'good' } else { 'bad' })"">$delta</div><div class=""l"">Delta conformes</div></div>"
 $sumHtml += "<div><div class=""v"">$($meta.regressions)</div><div class=""l"">Regressions</div></div>"
 $sumHtml += "<div><div class=""v"">$($meta.improvements)</div><div class=""l"">Ameliorations</div></div>"
+if ($funcBefore.Count -and $funcAfter.Count) {
+    $fbp = @($funcBefore.Values | Where-Object { $_.Status -eq 'PASS' }).Count
+    $fap = @($funcAfter.Values  | Where-Object { $_.Status -eq 'PASS' }).Count
+    $fd = $fap - $fbp
+    $sumHtml += "<div><div class=""v $(if ($fd -ge 0) { 'good' } else { 'bad' })"">$fbp &rarr; $fap</div><div class=""l"">Tests fonctionnels PASS</div></div>"
+    $sumHtml += "<div><div class=""v $(if ($funcRegression) { 'bad' } else { 'good' })"">$funcRegression</div><div class=""l"">Regr. fonctionnelles</div></div>"
+}
 $sumHtml += "</div>"
 
 $html = @"
 <!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8">
-<title>Comparatif de hardening - Proxmox VE 9</title>
+<title>$Title</title>
 <style>$css</style></head>
 <body>
 <header>
-  <h1>Comparatif de hardening &mdash; Proxmox VE 9</h1>
+  <h1>$Title</h1>
   <div class="meta">
     Avant : <code>$($meta.beforeDir)</code> &nbsp;|&nbsp;
     Apres : <code>$($meta.afterDir)</code> &nbsp;|&nbsp;

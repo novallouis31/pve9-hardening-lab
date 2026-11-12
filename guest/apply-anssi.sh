@@ -43,23 +43,50 @@ if [ "$DRY_RUN" != "1" ]; then
 fi
 
 block 2 "ANSSI N2 - AIDE (integrite fichiers)"
+# Les depots enterprise Proxmox (pve + ceph-squid) exigent une licence et
+# renvoient 401 : ils cassent apt-get update. On les desactive (inutile en lab).
+if [ "$DRY_RUN" != "1" ]; then
+    for f in /etc/apt/sources.list.d/pve-enterprise.sources /etc/apt/sources.list.d/ceph.sources; do
+        if [ -f "$f" ]; then
+            mv "$f" "$f.disabled"
+            echo "  [ok] depot enterprise desactive : $(basename "$f")"
+        fi
+    done
+fi
+exec_cmd "apt-get update -y"
 exec_cmd "apt-get install -y aide aide-common"
 if [ "$DRY_RUN" != "1" ] && command -v aideinit >/dev/null 2>&1; then
-  aideinit 2>&1 | tail -3 >>"$LOG"
+  # 'aide --init' pose une question [yN] : on repond "yes" et on purge la base
+  # existante pour eviter tout blocage interactif du script.
+  rm -f /var/lib/aide/aide.db /var/lib/aide/aide.db.new
+  yes | timeout 300 aideinit >/dev/null 2>&1 || true
+  yes | timeout 300 aide --init >/dev/null 2>&1 || true
   [ -f /var/lib/aide/aide.db.new ] && mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  [ -f /var/lib/aide/aide.db.gz ] && echo "  [ok] base AIDE initialisee"
 fi
 
 block 2 "ANSSI N2 - AppArmor en mode enforce"
 if command -v aa-enforce >/dev/null 2>&1; then
-  exec_cmd "aa-enforce /etc/apparmor.d/* 2>/dev/null || true"
+  for prof in /etc/apparmor.d/*; do
+    [ -f "$prof" ] || continue
+    aa-enforce "$prof" >/dev/null 2>&1 || true
+  done
+  exec_cmd "systemctl reload apparmor"
 fi
 
 block 2 "ANSSI N2 - centralisation des journaux (rsyslog)"
 write_file /etc/rsyslog.d/99-anssi-remote.conf 0644 "\
 # ANSSI : transfert vers un serveur de journaux central (a adapter)
-# *.* action(type=\"omfwd\" target=\"loghost.example.com\" port=\"514\" protocol=\"tcp\")
+# Definir LOG_SERVER pour activer le transfert distant (ex: 10.0.2.1).
+# *.* action(type=\"omfwd\" target=\"$LOG_SERVER\" port=\"514\" protocol=\"tcp\")
 # & stop
 "
+if [ "$DRY_RUN" != "1" ] && [ -n "${LOG_SERVER:-}" ]; then
+    write_file /etc/rsyslog.d/99-anssi-remote.conf 0644 "\
+*.* action(type=\"omfwd\" target=\"$LOG_SERVER\" port=\"514\" protocol=\"tcp\")
+& stop
+"
+fi
 exec_cmd "systemctl restart rsyslog"
 
 # --- niveau 3 : renforce
