@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Orchestrateur du lab de test de hardening Proxmox VE 9.
 
@@ -45,6 +45,10 @@ param(
     [int]$SshPort      = 2222,
     [string]$User      = 'root',
     [string]$KeyPath,
+    # Mot de passe root de la VM : voie de secours pour reinjecter la cle du
+    # lab quand l'acces SSH par cle est rompu (restauration de snapshot qui
+    # reinitialise /etc/pve/priv/authorized_keys sur Proxmox).
+    [string]$SshPassword = '19581958',
     [ValidateRange(1, 4)]
     [int]$Level        = 1,
     [int]$AbuaLevel    = 3,
@@ -86,7 +90,7 @@ function Write-Step { param([string]$m) Write-Host "`n=== $m ===" -ForegroundCol
 function Test-Ssh {
     $python = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
     $tool = Join-Path $scriptDir 'ssh-tool.py'
-    $args = @('test', $SshHost, $SshPort, $User, $KeyPath)
+    $args = @('test', $SshHost, $SshPort, $User, $KeyPath, '', $SshPassword)
     try {
         & $python $tool @args 2>$null
         return ($LASTEXITCODE -eq 0)
@@ -108,7 +112,7 @@ function Invoke-Ssh {
         if ($StandardInput) {
             $stdinArg = ($StandardInput -join "`n") + "`n"
         }
-        $args = @('exec', $SshHost, $SshPort, $User, $KeyPath, $Command, $stdinArg)
+        $args = @('exec', $SshHost, $SshPort, $User, $KeyPath, $Command, $stdinArg, $SshPassword)
         $out = & $python $tool @args 2> $errFile
         $code = $LASTEXITCODE
         $err = (Get-Content $errFile -Raw -ErrorAction SilentlyContinue)
@@ -123,7 +127,7 @@ function Copy-ToGuest {
     param([string]$Local, [string]$Remote)
     $python = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
     $tool = Join-Path $scriptDir 'ssh-tool.py'
-    $args = @('put', $SshHost, $SshPort, $User, $KeyPath, $Local, $Remote)
+    $args = @('put', $SshHost, $SshPort, $User, $KeyPath, $Local, $Remote, $SshPassword)
     & $python $tool @args 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Echec du transfert de $Local vers $Remote" }
     # Verification de l'integrite du fichier distant : un transfert tronque
@@ -142,8 +146,10 @@ function Copy-ToGuest {
 # Injecte la cle publique du lab dans le fichier PARTAGE de Proxmox.
 # Indispensable : apres une restauration de snapshot, /etc/pve/priv/authorized_keys
 # est reinitialise et l'acces SSH par cle est perdu.
+# L'injection passe par le repli mot de passe de ssh-tool.py : elle fonctionne
+# donc meme quand l'acces par cle est rompu.
 function Install-SshPubKey {
-    if (-not $SshPubKey) { return }
+    if (-not $KeyPath) { return }
     $pubFile = "$KeyPath.pub"
     if (-not (Test-Path $pubFile)) { return }
     $pub = (Get-Content $pubFile -Raw).Trim()
@@ -160,16 +166,29 @@ function Install-SshPubKey {
     Write-Host ("  cle publique du lab installee dans /etc/pve/priv/authorized_keys ({0} cle(s))" -f $n) -ForegroundColor DarkGray
 }
 
+# Connexion SSH avec reparation automatique : si l'acces par cle est rompu
+# (restauration de snapshot), on reinjecte la cle via le repli mot de passe
+# puis on re-tente la connexion par cle.
+function Connect-Ssh {
+    if (Test-Ssh) { return $true }
+    Write-Host "  acces SSH par cle indisponible : tentative de reparation..." -ForegroundColor Yellow
+    Install-SshPubKey
+    Start-Sleep -Seconds 2
+    return (Test-Ssh)
+}
+
 function Assert-Ssh {
-    if (-not (Test-Ssh)) {
-        Write-Host ""
-        Write-Host "Connexion SSH impossible vers $User@$SshHost`:$SshPort" -ForegroundColor Red
-        Write-Host "Verifiez :" -ForegroundColor Red
-        Write-Host "  1. la VM est demarree et l'installation de PVE est terminee"
-        Write-Host "  2. la redirection NAT est active (port $SshPort -> 22)"
-        Write-Host "  3. la cle publique du lab est installee (phase bootstrap)"
-        throw "SSH indisponible"
-    }
+    # Tentative de reparation : la restauration d'un snapshot reinitialise
+    # /etc/pve/priv/authorized_keys sur Proxmox, ce qui coupe l'acces par
+    # cle. On reinjecte la cle (via le repli mot de passe) puis on re-tente.
+    if (Connect-Ssh) { return }
+    Write-Host ""
+    Write-Host "Connexion SSH impossible vers $User@$SshHost`:$SshPort" -ForegroundColor Red
+    Write-Host "Verifiez :" -ForegroundColor Red
+    Write-Host "  1. la VM est demarree et l'installation de PVE est terminee"
+    Write-Host "  2. la redirection NAT est active (port $SshPort -> 22)"
+    Write-Host "  3. la cle publique du lab est installee (phase bootstrap)"
+    throw "SSH indisponible"
 }
 
 # --------------------------------------------------------------- phase: bootstrap
@@ -239,7 +258,7 @@ function Invoke-FuncTest {
         $remoteFile = ($ls.Out -split "`n" | Where-Object { $_ -match '\.txt$' } | Select-Object -First 1)
         if ($remoteFile) {
             $remoteFile = $remoteFile.Trim()
-            $gargs = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/$remoteFile", (Join-Path $dir "$($suite.Tag)-$remoteFile"))
+            $gargs = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/$remoteFile", (Join-Path $dir "$($suite.Tag)-$remoteFile"), $SshPassword)
             & $py $tool @gargs 2>&1 | Out-Null
         }
 
@@ -291,9 +310,9 @@ function Invoke-Audit {
     # On recupere le fichier produit par le script (checks.tsv + audit.txt)
     $python = "C:\Users\Louis\AppData\Local\Programs\Python\Python313\python.exe"
     $tool = Join-Path $scriptDir 'ssh-tool.py'
-    $args1 = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/audit.txt", (Join-Path $dir 'audit.txt'))
+    $args1 = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/audit.txt", (Join-Path $dir 'audit.txt'), $SshPassword)
     & $python $tool @args1 2>&1 | Out-Null
-    $args2 = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/checks.tsv", (Join-Path $dir 'checks.tsv'))
+    $args2 = @('get', $SshHost, $SshPort, $User, $KeyPath, "$remote/checks.tsv", (Join-Path $dir 'checks.tsv'), $SshPassword)
     & $python $tool @args2 2>&1 | Out-Null
 
     $summary = ($res.Out -split "`n" | Where-Object { $_ -match '^PASS=' }) -join ''

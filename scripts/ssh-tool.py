@@ -27,6 +27,10 @@ HOST = sys.argv[2]
 PORT = int(sys.argv[3])
 USER = sys.argv[4]
 KEY_PATH = sys.argv[5]
+# Mot de passe optionnel : voie de secours pour reinjecter la cle du lab
+# quand l'acces par cle est rompu (restauration de snapshot).
+# Il est TOUJOURS le dernier argument transmis, quel que soit l'action.
+PASSWORD = sys.argv[-1] if len(sys.argv) > 6 and sys.argv[-1] not in ('', '-') else None
 
 # Timeout d'execution : configurable via SSH_TIMEOUT (les installations de
 # paquets via apt peuvent depasser plusieurs minutes).
@@ -34,8 +38,31 @@ EXEC_TIMEOUT = int(os.environ.get("SSH_TIMEOUT", "120"))
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect(HOST, port=PORT, username=USER, key_filename=KEY_PATH,
-               look_for_keys=False, allow_agent=False, timeout=30)
+
+
+def connect():
+    """Connexion par cle ; en cas d'echec, repli sur le mot de passe.
+
+    Apres une restauration de snapshot, /etc/pve/priv/authorized_keys est
+    reinitialise et la cle du lab est perdue : le repli par mot de passe
+    permet de la reinjecter et de poursuivre le cycle.
+    """
+    try:
+        client.connect(HOST, port=PORT, username=USER, key_filename=KEY_PATH,
+                       look_for_keys=False, allow_agent=False, timeout=30)
+        return 'key'
+    except Exception as key_error:
+        if not PASSWORD:
+            raise
+        # Message sur stdout : sur stderr, PowerShell 5.1 le convertirait en
+        # erreur bloquante (ErrorActionPreference = Stop).
+        print("connexion par cle impossible ({}), repli sur le mot de passe".format(key_error))
+        client.connect(HOST, port=PORT, username=USER, password=PASSWORD,
+                       look_for_keys=False, allow_agent=False, timeout=30)
+        return 'password'
+
+
+AUTH_MODE = connect()
 
 if ACTION == 'test':
     stdin, stdout, stderr = client.exec_command('true', timeout=30)
@@ -45,7 +72,8 @@ if ACTION == 'test':
 
 elif ACTION == 'exec':
     COMMAND = sys.argv[6]
-    STDIN_DATA = sys.argv[7] if len(sys.argv) > 7 else None
+    # Donnees stdin : argument 7 (avant le mot de passe qui est le dernier).
+    STDIN_DATA = sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] != '' else None
     if STDIN_DATA is not None:
         stdin, stdout, stderr = client.exec_command(COMMAND, timeout=EXEC_TIMEOUT)
         stdin.write(STDIN_DATA)
