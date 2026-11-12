@@ -109,9 +109,9 @@ fi
 # -----------------------------------------------------------------------------
 # 5.4.2.x - Vieillissement des mots de passe (login.defs)
 # -----------------------------------------------------------------------------
-maxd=$(awk -F= '/^[[:space:]]*PASS_MAX_DAYS[[:space:]]*=/ {gsub(/[[:space:]]/,"",$2); print $2}' /etc/login.defs 2>/dev/null)
-mind=$(awk -F= '/^[[:space:]]*PASS_MIN_DAYS[[:space:]]*=/ {gsub(/[[:space:]]/,"",$2); print $2}' /etc/login.defs 2>/dev/null)
-warnd=$(awk -F= '/^[[:space:]]*PASS_WARN_AGE[[:space:]]*=/ {gsub(/[[:space:]]/,"",$2); print $2}' /etc/login.defs 2>/dev/null)
+maxd=$(awk '/^[[:space:]]*PASS_MAX_DAYS[[:space:]]/ {print $2}' /etc/login.defs 2>/dev/null)
+mind=$(awk '/^[[:space:]]*PASS_MIN_DAYS[[:space:]]/ {print $2}' /etc/login.defs 2>/dev/null)
+warnd=$(awk '/^[[:space:]]*PASS_WARN_AGE[[:space:]]/ {print $2}' /etc/login.defs 2>/dev/null)
 if [ -n "$maxd" ] && [ "$maxd" -le 365 ] 2>/dev/null && [ "$maxd" -gt 0 ]; then
     chk "CIS.5.4.2.1" PASS "PASS_MAX_DAYS=$maxd"
 else
@@ -131,7 +131,7 @@ fi
 # -----------------------------------------------------------------------------
 # 5.4.3.x - UMASK
 # -----------------------------------------------------------------------------
-umask_v=$(awk -F= '/^[[:space:]]*UMASK[[:space:]]*=/ {gsub(/[[:space:]]/,"",$2); print $2}' /etc/login.defs 2>/dev/null)
+umask_v=$(awk '/^[[:space:]]*UMASK[[:space:]]/ {print $2}' /etc/login.defs 2>/dev/null)
 if [ -n "$umask_v" ] && [ "$umask_v" = "027" ] || [ "$umask_v" = "077" ]; then
     chk "CIS.5.4.3.1" PASS "UMASK=$umask_v"
 else

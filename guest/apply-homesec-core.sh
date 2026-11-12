@@ -333,23 +333,14 @@ fi
 exec_cmd "systemctl restart ssh"
 
 # =============================================================================
-block 1 "6. PAM : faillock + pwquality (CIS 5.3.3, 5.4.1)"
-# =============================================================================
-ref "CIS Debian 13 5.3.3.1, 5.4.1"
-# Le depot enterprise Proxmox necessite une licence et renvoie 401 : on le
-# desactive (inutile en lab) pour que apt-get update aboutisse.
-if [ "$DRY_RUN" != "1" ]; then
-    for f in /etc/apt/sources.list.d/pve-enterprise.sources /etc/apt/sources.list.d/ceph.sources; do
-        if [ -f "$f" ]; then
-            mv "$f" "$f.disabled"
-            echo "  [ok] depot enterprise desactive : $(basename "$f")"
-        fi
-    done
-fi
-exec_cmd "apt-get update -y"
-exec_cmd "apt-get install -y auditd audispd-plugins libpam-pwquality cron"
-# pam_faillock fait partie de libpam-modules sur Debian 13
-exec_cmd "apt-get install -y libpam-modules"
+block 1 "6. PAM : faillock + pwquality (CIS 5.3.3.1, 5.4.1, 5.4.2)"
+ref "CIS Debian 13 5.3.3.1.x / 5.4.1.x / 5.4.2.x + guide PVE 9"
+exec_cmd "apt-get install -y libpam-modules libpam-pwquality"
+
+# --- CIS 5.3.3.1 : verrouillage de compte apres echecs d'authentification
+# Le CIS exige les arguments deny= / unlock_time= DANS la ligne PAM
+# (common-auth, sshd, login) : un simple appel a pam_faillock.so ne suffit
+# pas. even_deny_root / root_unlock_time sont requis pour root.
 write_file /etc/security/faillock.conf 0644 "\
 # CIS Debian 13 5.3.3.1 - pam_faillock
 deny = 5
@@ -357,63 +348,117 @@ unlock_time = 900
 fail_interval = 900
 dir = /var/log/faillock
 "
-# Installation de pwquality
-backup /etc/pam.d/common-auth
+
+# --- CIS 5.4.1 : qualite des mots de passe (pam_pwquality + pwquality.conf)
+write_file /etc/security/pwquality.conf 0644 "\
+# CIS Debian 13 5.4.1 - qualite des mots de passe
+minlen = 14
+minclass = 4
+maxrepeat = 3
+dcredit = -1
+ucredit = -1
+lcredit = -1
+ocredit = -1
+dictcheck = 1
+usercheck = 1
+enforcing = 1
+retry = 3
+"
+
+# --- CIS 5.4.2 : vieillissement des mots de passe (login.defs)
+# et CIS 5.4.3 : UMASK 027
 if [ "$DRY_RUN" != "1" ]; then
-    # pam_faillock : CIS Debian 13 5.3.3.1.1-5.3.3.1.3
-    # Le CIS exige les arguments deny= / unlock_time= DANS la ligne PAM
-    # (common-auth, sshd, login) : un simple appel a pam_faillock.so ne
-    # suffit pas. even_deny_root / root_unlock_time sont requis pour root.
-    # pam_pwquality : CIS 5.4.1.1 / 5.4.1.2 (retry= obligatoire).
+    backup /etc/login.defs
+    python3 - <<'PYPAM'
+import re
+
+path = "/etc/login.defs"
+with open(path) as fh:
+    lines = fh.read().splitlines()
+
+def set_param(lines, key, value):
+    """Remplace (ou ajoute) 'key<tab>value' dans login.defs."""
+    pattern = re.compile(r"^\s*" + re.escape(key) + r"\s")
+    out = []
+    done = False
+    for l in lines:
+        if pattern.match(l) and not l.strip().startswith('#'):
+            out.append("{}\t{}".format(key, value))
+            done = True
+        else:
+            out.append(l)
+    if not done:
+        # On retire les lignes commentees correspondantes pour eviter la confusion
+        out = [l for l in out
+               if not re.match(r"^\s*#\s*" + re.escape(key) + r"\s", l)]
+        out.append("{}\t{}".format(key, value))
+    return out
+
+lines = set_param(lines, "PASS_MAX_DAYS", "90")
+lines = set_param(lines, "PASS_MIN_DAYS", "1")
+lines = set_param(lines, "PASS_WARN_AGE", "7")
+lines = set_param(lines, "UMASK", "027")
+
+with open(path, "w") as fh:
+    fh.write("\n".join(lines) + "\n")
+print("login.defs : PASS_MAX_DAYS=90 PASS_MIN_DAYS=1 PASS_WARN_AGE=7 UMASK=027")
+PYPAM
+    echo "  [ok] login.defs : vieillissement + UMASK 027"
+fi
+
+# --- CIS 5.3.3.1 / 5.4.1 : lignes PAM pam_faillock.so et pam_pwquality.so
+# avec les arguments CIS (deny=, unlock_time=, retry=, minlen=, minclass=).
+if [ "$DRY_RUN" != "1" ]; then
     python3 - <<'PYPAM'
 FL = "deny=5 unlock_time=900 even_deny_root root_unlock_time=900"
 PW = "retry=3 minlen=14 minclass=4"
 
 
-def patch(path, anchor, params, module):
-    """Insere ou normalise la ligne <module> avec les parametres CIS."""
+def patch(path, anchor, params, module, prefix):
+    """Insere ou normalise la ligne <module>.so avec les parametres CIS."""
     try:
-        fh = open(path)
+        with open(path) as fh:
+            src = fh.read().splitlines()
     except OSError:
         return False
-    content = fh.read()
-    fh.close()
-    src = content.splitlines()
     out = []
     done = False
     for l in src:
-        if module in l and not l.strip().startswith('#'):
-            base = l.split(module)[0] + module
-            out.append(base + " " + params)
+        stripped = l.strip()
+        if module in stripped and not stripped.startswith('#'):
+            # On normalise les arguments CIS sur la ligne existante
+            head = l.split(module)[0]
+            out.append(head + module + " " + params)
             done = True
             continue
-        s = l.strip()
-        if (not done and not s.startswith('#') and s
-                and anchor in s and s.startswith('auth')):
-            out.append("auth\trequisite\t%s.so preauth %s" % (module, params))
-            out.append("auth\trequisite\t%s.so authfail %s" % (module, params))
-            out.append("auth\trequisite\t%s.so authsucc %s" % (module, params))
+        if (not done and not stripped.startswith('#') and stripped
+                and anchor in stripped and stripped.startswith(prefix)):
+            out.append("%s\trequisite\t%s %s" % (prefix, module, params))
+            out.append("%s\trequisite\t%s %s" % (prefix, module, params))
+            out.append("%s\trequisite\t%s %s" % (prefix, module, params))
             done = True
         out.append(l)
     if done:
-        open(path, "w").write("\n".join(out) + "\n")
+        with open(path, "w") as fh:
+            fh.write("\n".join(out) + "\n")
     return done
 
 
 ok = False
 for f in ("/etc/pam.d/common-auth", "/etc/pam.d/sshd", "/etc/pam.d/login"):
-    if patch(f, "pam_unix.so", FL, "pam_faillock"):
+    if patch(f, "pam_unix.so", FL, "pam_faillock.so", "auth"):
         ok = True
         break
-print("pam_faillock CIS configure" if ok else "pam_faillock : insertion impossible")
+print("pam_faillock.so CIS configure" if ok else "pam_faillock.so : insertion impossible")
 
 ok = False
 for f in ("/etc/pam.d/common-password", "/etc/pam.d/passwd"):
-    if patch(f, "pam_unix.so", PW, "pam_pwquality"):
+    if patch(f, "pam_unix.so", PW, "pam_pwquality.so", "password"):
         ok = True
         break
-print("pam_pwquality CIS configure" if ok else "pam_pwquality : insertion impossible")
+print("pam_pwquality.so CIS configure" if ok else "pam_pwquality.so : insertion impossible")
 PYPAM
+    echo "  [ok] lignes PAM pam_faillock.so / pam_pwquality.so conformes CIS"
 fi
 
 # --- CIS 6.1.2.x / 6.1.3.x : permissions des fichiers de comptes
@@ -543,6 +588,9 @@ fi
 # --- 11b. Auditd sur /etc/pve (CIS 5.1.2) - applicable des le niveau 1
 block 1 "11b. Auditd : surveillance des modifications de /etc/pve (CIS 5.1.2)"
 ref "Guide PVE 9 § 5.1.2 Auditd for /etc/pve"
+# auditd doit etre INSTALLE (paquet) puis active : sans le paquet, le service
+# n'existe pas et le controle OS.AUDITD.ACTIVE echoue.
+exec_cmd "apt-get install -y auditd audispd-plugins"
 write_file /etc/audit/rules.d/90-pve.rules 0644 "\
 -w /etc/pve -p wa -k pve-config
 "
