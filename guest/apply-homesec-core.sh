@@ -261,6 +261,24 @@ if [ "$DRY_RUN" != "1" ]; then
     grep -qE '^tmpfs\s+/var/tmp\s' /etc/fstab && mount /var/tmp 2>/dev/null
 fi
 
+# --- Persistance des options de montage -------------------------------------
+# /tmp, /var/tmp et /dev/shm sont recrees au demarrage par systemd : sans
+# declaration dans /etc/fstab, le noexec pose a chaud est perdu et le
+# controle OS.MOUNT._dev_shm echoue apres un redemarrage.
+if [ "$DRY_RUN" != "1" ]; then
+    backup /etc/fstab
+    for mp in /tmp /var/tmp /dev/shm; do
+        if ! grep -qE "^[^#]*[[:space:]]$mp[[:space:]]" /etc/fstab 2>/dev/null; then
+            printf 'tmpfs %s tmpfs rw,nosuid,nodev,noexec,size=524288k,mode=1777 0 0\n' "$mp" >> /etc/fstab
+            echo "  [ok] $mp declare dans /etc/fstab"
+        fi
+    done
+    # remount immediat pour appliquer sans redemarrer
+    for mp in /dev/shm /var/tmp; do
+        mount -o remount,rw,nosuid,nodev,noexec "$mp" 2>/dev/null || true
+    done
+fi
+
 # =============================================================================
 block 1 "3. Permissions cron et at (CIS 2.4.1.x)"
 # =============================================================================
