@@ -1,8 +1,8 @@
-﻿# Stack complet CIS L2 + ANSSI BP-028 N3 + Ceph - Proxmox VE 9
+# Stack complet CIS L2 + ANSSI BP-028 N3 + Ceph - Proxmox VE 9
 
-- **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261112-192427`
-- **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-193840`
-- **Genere le** : 2026-11-12 19:49:44
+- **Avant** : `artifacts\baseline-20261113-095916`
+- **Apres** : `artifacts\after-20261113-100753`
+- **Genere le** : 2026-11-13 10:10:53
 
 ## Synthese
 
@@ -12,11 +12,11 @@
 | Controles en echec (FAIL) | 72 | 0 | (-78) |
 | Regressions | - | 0 | |
 | Ameliorations | - | 78 | |
-| Tests fonctionnels PASS | 62 | 71 | +9 |
+| Tests fonctionnels PASS | 63 | 71 | +8 |
 | Regressions fonctionnelles | - | 0 | |
 | Tests fonctionnels Proxmox (PASS / total) | 22 / 23 | 22 / 23 | +0 |
 | Tests fonctionnels Proxmox (FAIL) | - | 0 | |
-| Tests fonctionnels OS (PASS / total) | 40 / 49 | 49 / 49 | +9 |
+| Tests fonctionnels OS (PASS / total) | 41 / 49 | 49 / 49 | +8 |
 | Tests fonctionnels OS (FAIL) | - | 0 | |
 
 ## Ameliorations
@@ -24,7 +24,7 @@
 | Controle | Avant | Apres | Detail |
 |---|---|---|---|
 | `OS.MOUNT._var_tmp` | FAIL | PASS | /var/tmp opts=rw,nosuid,nodev,noexec,relatime,size=524288k,inode64 |
-| `OS.MOUNT._dev_shm` | FAIL | PASS | /dev/shm opts=rw,nosuid,nodev,noexec,inode64 |
+| `OS.MOUNT._dev_shm` | FAIL | PASS | /dev/shm opts=rw,nosuid,nodev,noexec,size=524288k,inode64 |
 | `OS.CRON.CRONTAB` | FAIL | PASS | /etc/crontab en 600 |
 | `OS.CRON.DIR.cron.daily` | FAIL | PASS | /etc/cron.daily en 700 |
 | `OS.CRON.DIR.cron.hourly` | FAIL | PASS | /etc/cron.hourly en 700 |
@@ -228,7 +228,7 @@
 | 110 | `OS.MOD.hfs` | PASS | PASS | inchange | module hfs neutralise |
 | 111 | `OS.MOD.hfsplus` | PASS | PASS | inchange | module hfsplus neutralise |
 | 112 | `OS.MOD.jffs2` | PASS | PASS | inchange | module jffs2 neutralise |
-| 113 | `OS.MOUNT._dev_shm` | FAIL | PASS | amelioration | /dev/shm opts=rw,nosuid,nodev,noexec,inode64 |
+| 113 | `OS.MOUNT._dev_shm` | FAIL | PASS | amelioration | /dev/shm opts=rw,nosuid,nodev,noexec,size=524288k,inode64 |
 | 114 | `OS.MOUNT._tmp` | PASS | PASS | inchange | /tmp opts=rw,nosuid,nodev,size=4065212k,nr_inodes=1048576,inode64 |
 | 115 | `OS.MOUNT._var_tmp` | FAIL | PASS | amelioration | /var/tmp opts=rw,nosuid,nodev,noexec,relatime,size=524288k,inode64 |
 | 116 | `OS.NETMOD.atm` | PASS | PASS | inchange | module atm neutralise |
@@ -254,9 +254,9 @@
 | 136 | `OS.SSHD.MACS` | FAIL | PASS | amelioration | MACs sans algorithme faible |
 | 137 | `OS.SSHD.MAXAUTH` | PASS | PASS | inchange | MaxAuthTries=4 |
 | 138 | `OS.SSHD.PASSWORDAUTH` | FAIL | PASS | amelioration | PasswordAuthentication=no |
-| 139 | `OS.SSHD.PERM.sshd_config` | FAIL | PASS | amelioration | /etc/ssh/sshd_config en 600 |
-| 140 | `OS.SSHD.PERM.sshd_config.d` | FAIL | PASS | amelioration | /etc/ssh/sshd_config.d en 700 |
-| 141 | `OS.SSHD.PERMITROOT` | FAIL | PASS | amelioration | PermitRootLogin=no |
+| 139 | `OS.SSHD.PERMITROOT` | FAIL | PASS | amelioration | PermitRootLogin=no |
+| 140 | `OS.SSHD.PERM.sshd_config` | FAIL | PASS | amelioration | /etc/ssh/sshd_config en 600 |
+| 141 | `OS.SSHD.PERM.sshd_config.d` | FAIL | PASS | amelioration | /etc/ssh/sshd_config.d en 700 |
 | 142 | `OS.SSHD.PUBKEY` | PASS | PASS | inchange | PubkeyAuthentication=yes |
 | 143 | `OS.SSHD.X11` | FAIL | PASS | amelioration | X11Forwarding=no |
 | 144 | `OS.UNATTENDED.ENABLED` | FAIL | PASS | amelioration | mises a jour automatiques activees |
@@ -279,7 +279,7 @@
 
 ## Tests fonctionnels - avant / apres durcissement
 
-| # | Suite | Test fonctionnel | Avant | Apres | Evolution | Detail (apres) |
+| # | Suite | Test | Statut avant | Statut apres | Evolution | Detail (apres) |
 |---|---|---|---|---|---|---|
 | 1 | Proxmox | `FUNC.FW.API` | PASS | PASS | inchange | options du pare-feu lisibles via l'API |
 | 2 | Proxmox | `FUNC.FW.STATUS` | PASS | PASS | inchange | pve-firewall status repond |
@@ -291,8 +291,8 @@
 | 8 | Proxmox | `FUNC.NET.IFACE` | PASS | PASS | inchange | au moins une interface reseau est UP |
 | 9 | Proxmox | `FUNC.NET.VMBR0` | PASS | PASS | inchange | pont vmbr0 present |
 | 10 | Proxmox | `FUNC.NODE.ONLINE` | PASS | PASS | inchange | noeud localhost en ligne |
-| 11 | Proxmox | `FUNC.PVE.API` | PASS | PASS | inchange | API pvesh fonctionnelle |
-| 12 | Proxmox | `FUNC.PVEAM.UPDATE` | PASS | PASS | inchange | pveam update operationnel |
+| 11 | Proxmox | `FUNC.PVEAM.UPDATE` | PASS | PASS | inchange | pveam update operationnel |
+| 12 | Proxmox | `FUNC.PVE.API` | PASS | PASS | inchange | API pvesh fonctionnelle |
 | 13 | Proxmox | `FUNC.SSH.KEYAUTH` | PASS | PASS | inchange | 2 cle(s) publique(s) autorisee(s) pour root |
 | 14 | Proxmox | `FUNC.STORE.ACTIVE` | PASS | PASS | inchange | au moins un depot de stockage est actif |
 | 15 | Proxmox | `FUNC.STORE.LIST` | PASS | PASS | inchange | pvesm status : 2 entrepot(s) disponible(s) |
@@ -315,7 +315,7 @@
 | 32 | OS | `OS.FS.DISK` | PASS | PASS | inchange | espace disque racine : 18% utilise |
 | 33 | OS | `OS.FS.INODES` | PASS | PASS | inchange | inodes racine : 4% utilise |
 | 34 | OS | `OS.FS.MOUNT` | PASS | PASS | inchange | commande mount operationnelle |
-| 35 | OS | `OS.FS.OPTIONS._dev_shm` | PASS | PASS | inchange | /dev/shm options=rw,nosuid,nodev,noexec,inode64 |
+| 35 | OS | `OS.FS.OPTIONS._dev_shm` | PASS | PASS | inchange | /dev/shm options=rw,nosuid,nodev,noexec,size=524288k,inode64 |
 | 36 | OS | `OS.FS.OPTIONS._tmp` | PASS | PASS | inchange | /tmp options=rw,nosuid,nodev,size=4065212k,nr_inodes=1048576,inode64 |
 | 37 | OS | `OS.FS.OPTIONS._var_tmp` | WARN | PASS | amelioration | /var/tmp options=rw,nosuid,nodev,noexec,relatime,size=524288k,inode64 |
 | 38 | OS | `OS.FS.TMP` | PASS | PASS | inchange | /tmp accessible en ecriture |
@@ -328,10 +328,10 @@
 | 45 | OS | `OS.LOG.AUDITD` | NA | PASS | amelioration | auditd actif |
 | 46 | OS | `OS.LOG.JOURNALD.READ` | PASS | PASS | inchange | journald actif et lisible |
 | 47 | OS | `OS.LOG.RSYSLOG` | NA | PASS | amelioration | rsyslog actif |
-| 48 | OS | `OS.NET.DNS` | WARN | PASS | amelioration | resolution DNS operationnelle |
+| 48 | OS | `OS.NET.DNS` | PASS | PASS | inchange | resolution DNS operationnelle |
 | 49 | OS | `OS.NET.LOOPBACK` | PASS | PASS | inchange | interface loopback active |
 | 50 | OS | `OS.NET.PINGLOCAL` | PASS | PASS | inchange | 127.0.0.1 joignable |
-| 51 | OS | `OS.NET.ROUTE` | PASS | PASS | inchange | default via 10.0.2.2 dev vmbr0 proto kernel onlink  |
+| 51 | OS | `OS.NET.ROUTE` | PASS | PASS | inchange | default via 10.0.2.2 dev vmbr0 proto kernel onlink |
 | 52 | OS | `OS.PAM.CHAINS` | PASS | PASS | inchange | chaines PAM communes presentes |
 | 53 | OS | `OS.SUDO.WORK` | NA | PASS | amelioration | sudo operationnel (acces root sans mot de passe) |
 | 54 | OS | `OS.SVC.systemd-journald` | PASS | PASS | inchange | systemd-journald actif |
@@ -348,7 +348,7 @@
 | 65 | OS | `OS.SYSCTL.NET_IPV4_TCP_SYNCOOKIES` | PASS | PASS | inchange | net.ipv4.tcp_syncookies=1 |
 | 66 | OS | `OS.SYSTEMD.NOFAILED` | PASS | PASS | inchange | aucune unite systemd en echec |
 | 67 | OS | `OS.SYSTEMD.STATE` | PASS | PASS | inchange | systeme en etat 'running' |
-| 68 | OS | `OS.TIME.CLOCK` | PASS | PASS | inchange | date operationnelle (2026-11-12T19:38:21+01:00) |
+| 68 | OS | `OS.TIME.CLOCK` | PASS | PASS | inchange | date operationnelle (2026-11-13T10:08:32+01:00) |
 | 69 | OS | `OS.TIME.SYNC` | PASS | PASS | inchange | horloge synchronisee (NTP) |
 | 70 | OS | `OS.TIMEZONE` | PASS | PASS | inchange | fuseau horaire : /usr/share/zoneinfo/Europe/Paris |
 | 71 | OS | `OS.USER.NONROOT` | WARN | PASS | amelioration | 1 compte(s) utilisateur(s) avec shell interactif |
@@ -359,8 +359,8 @@
 | Suite | Tests | PASS av. | PASS ap. | FAIL av. | FAIL ap. | WARN av. | WARN ap. | NA av. | NA ap. | Regression | Controle somme |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Proxmox | 23 | 22 | 22 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | OK (23/23) |
-| OS | 49 | 40 | 49 | 1 | 0 | 4 | 0 | 4 | 0 | 0 | OK (49/49) |
-| TOTAL | 72 | 62 | 71 | 1 | 0 | 5 | 1 | 4 | 0 | 0 | av.=72/72 ap.=72/72 OK |
+| OS | 49 | 41 | 49 | 1 | 0 | 3 | 0 | 4 | 0 | 0 | OK (49/49) |
+| TOTAL | 72 | 63 | 71 | 1 | 0 | 4 | 1 | 4 | 0 | 0 | av.=72/72 ap.=72/72 OK |
 
 ## Tests fonctionnels - tests non conformes (WARN / NA) documentes
 
@@ -371,9 +371,7 @@
 | 3 | OS | `OS.FS.OPTIONS._var_tmp` | WARN | PASS | /var/tmp options=rw,nosuid,nodev,noexec,relatime,size=524288k,inode64 |
 | 4 | OS | `OS.LOG.AUDITD` | NA | PASS | auditd actif |
 | 5 | OS | `OS.LOG.RSYSLOG` | NA | PASS | rsyslog actif |
-| 6 | OS | `OS.NET.DNS` | WARN | PASS | resolution DNS operationnelle |
-| 7 | OS | `OS.SUDO.WORK` | NA | PASS | sudo operationnel (acces root sans mot de passe) |
-| 8 | OS | `OS.SYSCTL.CONFFILES` | NA | PASS | 3 fichier(s) de configuration sysctl |
-| 9 | OS | `OS.SYSCTL.NET_IPV4_CONF_ALL_ACCEPT_REDIRECTS` | WARN | PASS | net.ipv4.conf.all.accept_redirects=0 |
-| 10 | OS | `OS.USER.NONROOT` | WARN | PASS | 1 compte(s) utilisateur(s) avec shell interactif |
-
+| 6 | OS | `OS.SUDO.WORK` | NA | PASS | sudo operationnel (acces root sans mot de passe) |
+| 7 | OS | `OS.SYSCTL.CONFFILES` | NA | PASS | 3 fichier(s) de configuration sysctl |
+| 8 | OS | `OS.SYSCTL.NET_IPV4_CONF_ALL_ACCEPT_REDIRECTS` | WARN | PASS | net.ipv4.conf.all.accept_redirects=0 |
+| 9 | OS | `OS.USER.NONROOT` | WARN | PASS | 1 compte(s) utilisateur(s) avec shell interactif |
