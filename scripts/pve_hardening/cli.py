@@ -180,6 +180,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_hard.add_argument("--pdf", default="", help="chemin du rapport PDF")
     p_hard.add_argument("--ssh-timeout", type=int, default=3600, help="timeout SSH (secondes)")
 
+    # ------------------------------------------------------------ prepare-vm
+    p_prep = sub.add_parser("prepare-vm", help="prepare la VM VirtualBox de laboratoire")
+    p_prep.add_argument("--vm", default="proxmox", help="nom de la VM")
+    p_prep.add_argument("--memory", type=int, default=8192, help="memoire (Mo)")
+    p_prep.add_argument("--cpus", type=int, default=4, help="nombre de CPU")
+    p_prep.add_argument("--firmware", default="bios", choices=("bios", "efi"))
+    p_prep.add_argument("--ssh-port", type=int, default=2222, help="port SSH hote")
+    p_prep.add_argument("--web-port", type=int, default=8006, help="port web hote")
+    p_prep.add_argument("--iso", default="", help="chemin de l'ISO d'installation")
+    p_prep.add_argument("--no-iso", action="store_true", help="PVE deja installe")
+
     # ------------------------------------------------------------------ pdf
     p_pdf = sub.add_parser("pdf", help="rend un HTML en PDF")
     p_pdf.add_argument("--html", required=True)
@@ -323,6 +334,24 @@ def main(argv: list[str] | None = None) -> int:
             return harden(options)
         except Exception as exc:
             console.error("echec : {}".format(exc))
+            return 1
+
+    if args.command == "prepare-vm":
+        from .vm import prepare_vm
+
+        try:
+            return prepare_vm(
+                vm_name=args.vm,
+                memory_mb=args.memory,
+                cpu_count=args.cpus,
+                firmware=args.firmware,
+                ssh_host_port=args.ssh_port,
+                web_host_port=args.web_port,
+                iso_path=args.iso,
+                no_iso=args.no_iso,
+            )
+        except Exception as exc:
+            console.error(str(exc))
             return 1
 
     if args.command == "pdf":

@@ -25,7 +25,7 @@ Destination    : C:\Users\Louis\Documents\Projet par defaut\pve9-hardening-lab
 
 En ligne de commande (equivalent) :
 
-```powershell
+```bash
 git clone https://github.com/<votre-compte>/pve9-hardening-lab.git
 ```
 
@@ -49,7 +49,7 @@ GitHub. Le PAT est stocke dans le magasin chiffre de l'application
 
 ### Enregistrer le PAT dans la CLI GitKraken
 
-```powershell
+```bash
 gk provider add github -t ghp_VOTRE_JETON
 gk provider list
 gk whoami
@@ -90,13 +90,13 @@ Si le depot GitHub n'existe pas encore, creez-le depuis GitKraken :
 
 GitKraken configure alors automatiquement le remote `origin`. Verifiez avec :
 
-```powershell
+```bash
 git remote -v
 ```
 
 Si le remote n'est pas configure :
 
-```powershell
+```bash
 git remote add origin https://github.com/<votre-compte>/pve9-hardening-lab.git
 git push -u origin master --tags
 ```
@@ -106,14 +106,14 @@ git push -u origin master --tags
 Les rapports sont **versionnes** dans `reports/` (ce sont eux la livraison
 principale du projet). Ils sont regeneres par les cycles de test :
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase all -Target core -Level 2 `
-    -AuditExtra anssi,ceph,cis13,communautaire -RunFunc
+```bash
+python3 scripts/pve.py run --phase all --target core --level 2 \
+    --audit-extra anssi,ceph,cis13,communautaire --run-func
 ```
 
 Puis :
 
-```powershell
+```bash
 git add reports/
 git commit -m "docs: rapports PDF du cycle CIS L2 + ANSSI N3 + Ceph"
 git push origin master
@@ -123,7 +123,7 @@ Les rapports PDF regeneres sont volumineux (~800 Ko chacun). Pour ne pas
 alourdir l'historique, **preferez amend** plutot qu'un nouveau commit quand il
 s'agit uniquement de regenerer un rapport :
 
-```powershell
+```bash
 git add reports/rapport-stack-complet.pdf
 git commit --amend --no-edit
 git push --force-with-lease origin master
@@ -134,7 +134,7 @@ git push --force-with-lease origin master
 
 ## 5. Branche de travail pour une nouvelle serie de tests
 
-```powershell
+```bash
 git switch -c feature/nouvelle-campagne
 # ... travaux ...
 git add -A
@@ -159,7 +159,7 @@ Workflow :
 
 Si un conflit est bloque, abandonnez proprement :
 
-```powershell
+```bash
 git merge --abort
 ```
 
@@ -174,11 +174,11 @@ Le depot ne contient **aucun secret** :
 | `reports/*.html` | ignores (seuls les PDF et MD sont versionnes) |
 | mots de passe root des VM | uniquement dans `docs/` (valeurs de lab) |
 
-Le script `scripts/publish-github.ps1` verifie qu'aucun fichier suspect
+La commande `pve.py publish` verifie qu'aucun fichier suspect
 n'est suivi avant de pousser :
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\publish-github.ps1 -Token ghp_... -Owner <votre-compte>
+```bash
+python3 scripts/pve.py publish --repo pve9-hardening-lab --token ghp_... --owner <votre-compte>
 ```
 
 ## 8. Depannage
@@ -194,7 +194,7 @@ powershell -ExecutionPolicy Bypass -File scripts\publish-github.ps1 -Token ghp_.
 
 Test rapide de l'authentification :
 
-```powershell
+```bash
 git ls-remote origin
 ```
 

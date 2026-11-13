@@ -161,7 +161,7 @@ base et rend le disque de nouveau bootable (verifie dans cette session).
 
 ## Sequence de deploiement
 
-```powershell
+```bash
 # 1. Creer le disque 64 Go et la VM
 VBoxManage createmedium disk --filename "$VMDIR\proxmox.vdi" --size 65536 --format VDI
 VBoxManage createvm --name proxmox --ostype Debian_64 --register --basefolder $VMDIR
@@ -184,7 +184,7 @@ VBoxManage modifyvm proxmox --boot1=disk --boot2=dvd
 VBoxManage startvm proxmox --type headless
 
 # 5. Snapshot de reference (VM eteinte)
-powershell -File scripts\\vm-snapshot.ps1 -Action Create -Name pristine
+python3 scripts/pve.py snapshot --action create --name pristine
 ```
 
 ## Regles NAT (a reappliquer a chaque arret)
@@ -192,7 +192,7 @@ powershell -File scripts\\vm-snapshot.ps1 -Action Create -Name pristine
 Les regles de redirection NAT sont perdues a chaque arret du VM (`poweroff`).
 Les recreer systematiquement **avant** la boucle d'attente SSH :
 
-```powershell
+```bash
 VBoxManage controlvm proxmox natpf1 delete pve-ssh
 VBoxManage controlvm proxmox natpf1 "pve-ssh,tcp,127.0.0.1,2222,,22"
 VBoxManage controlvm proxmox natpf1 "pve-web,tcp,127.0.0.1,8006,,8006"
@@ -200,23 +200,23 @@ VBoxManage controlvm proxmox natpf1 "pve-web,tcp,127.0.0.1,8006,,8006"
 
 ## Cycle de test
 
-```powershell
+```bash
 # Restauration de la base propre
-powershell -File scripts\\vm-snapshot.ps1 -Action Restore -Name pristine
+python3 scripts/pve.py snapshot --action restore --name pristine
 VBoxManage startvm proxmox --type headless
 # ... attendre SSH ...
 
 # Baseline + durcissement + rapport
-powershell -File scripts\\run-phase.ps1 -Phase all -Target core -Level 2 `
-    -AuditExtra anssi,ceph,cis13,communautaire -RunFunc
+python3 scripts/pve.py run --phase all --target core --level 2 \
+    --audit-extra anssi,ceph,cis13,communautaire --run-func
 ```
 
 ## Scripts annexes
 
 | Fichier | Role |
 |---|---|
-| `scripts/ssh-tool.py` | wrapper SSH/SFTP via paramiko (contourne les problemes de `ssh.exe` sous PowerShell) |
-| `scripts/vm-image.ps1` | sauvegarde/restauration de l'image de reference par **clonage complet** du disque |
+| `scripts/ssh-tool.py` | wrapper SSH/SFTP via paramiko (fonctionne sous PowerShell, bash et Linux) |
+| `scripts/pve.py image` | sauvegarde/restauration de l'image de reference par **clonage complet** du disque |
 | `guest/reset-pristine.sh` | retour a l'etat propre (annule le hardening) |
 | `guest/func-test-pve.sh` | tests fonctionnels de non-regression Proxmox (21 tests) |
 | `guest/func-test-os.sh` | tests fonctionnels de non-regression OS (48 tests) |

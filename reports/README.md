@@ -118,21 +118,21 @@ mort et l'OS etait en etat `degraded`.
 
 ## Reproduction
 
-```powershell
+```bash
 # Niveau 1 (par defaut)
-powershell -File scripts\\run-phase.ps1 -Phase apply -Target core -Level 1
+python3 scripts/pve.py run --phase apply --target core --level 1
 # Niveau 2 / ANSSI 3 / Ceph
-powershell -File scripts\\run-phase.ps1 -Phase apply -Target core  -Level 2
-powershell -File scripts\\run-phase.ps1 -Phase apply -Target anssi -Level 3
-powershell -File scripts\\run-phase.ps1 -Phase apply -Target ceph
+python3 scripts/pve.py run --phase apply --target core --level 2
+python3 scripts/pve.py run --phase apply --target anssi --level 3
+python3 scripts/pve.py run --phase apply --target ceph
 ```
 
 Cycle complet (baseline + audit fonctionnel avant, durcissement, audit + audit
 fonctionnel apres, rapport PDF) en une commande :
 
-```powershell
-powershell -File scripts\\run-phase.ps1 -Phase all -Target core -Level 2 `
-    -AuditExtra anssi,ceph,cis13,communautaire -RunFunc
+```bash
+python3 scripts/pve.py run --phase all --target core --level 2 \
+    --audit-extra anssi,ceph,cis13,communautaire --run-func
 ```
 
 Voir `docs/PLAN-DE-TEST.md` (protocole complet) et

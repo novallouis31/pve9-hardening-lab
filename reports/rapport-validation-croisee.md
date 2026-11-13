@@ -54,7 +54,7 @@ La reproductibilite a exige la correction de plusieurs problemes **d'outillage**
 | Snapshot restaure a chaud | le guest reste sans reseau, le cycle echoue au verify | arret systematique de la VM avant `snapshot restore` |
 
 Ces corrections sont dans `guest/apply-homesec-core.sh`, `guest/apply-anssi.sh`,
-`scripts/ssh-tool.py` et `scripts/run-phase.ps1`.
+`scripts/ssh-tool.py` et `scripts/pve.py run`.
 
 ## Rapports PDF
 

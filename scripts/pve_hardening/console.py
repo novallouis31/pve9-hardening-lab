@@ -69,7 +69,15 @@ class Console:
 
     def write(self, text: str = "", color: str | None = None) -> None:
         """Ecrit sur stdout : jamais interprete comme une erreur."""
-        print(self._paint(text, color), file=self.stream, flush=True)
+        try:
+            print(self._paint(text, color), file=self.stream, flush=True)
+        except BrokenPipeError:
+            # La sortie a ete fermee (pipes vers head/less) : on ignore.
+            try:
+                devnull = os.open(os.devnull, os.O_WRONLY)
+                os.dup2(devnull, self.stream.fileno())
+            except Exception:
+                pass
 
     def error(self, text: str = "") -> None:
         """Ecrit sur stderr : a reservuer aux vraies erreurs."""

@@ -6,6 +6,51 @@ Objectifs : mesurer la **conformite CIS Debian 13 / ANSSI BP-028 / Ceph**, verif
 que le durcissement **ne casse ni Proxmox ni l'OS** (69 tests fonctionnels
 avant/apres), et produire un **rapport PDF du delta** par guide.
 
+## Durcir une instance Proxmox (usage rapide)
+
+L'outillage de reference est en **Python** et fonctionne sous Linux
+(Ubuntu, SLES, RHEL), macOS et Windows. Pour durcir une instance
+Proxmox existante, une seule commande :
+
+```bash
+# mot de passe root
+python3 scripts/pve.py harden --host 192.168.1.50 --level 2 --password 'secret'
+
+# cle SSH
+python3 scripts/pve.py harden --host 10.0.0.5 --level 3 --key ~/.ssh/id_ed25519
+
+# simulation sans modification
+python3 scripts/pve.py harden --host 10.0.0.5 --level 2 --password 'secret' --dry-run
+```
+
+La commande verifie que la cible est bien un noeud Proxmox, demande une
+confirmation, sauvegarde chaque fichier modifie sur la cible, genere un
+script de rollback, puis **controle que les services critiques restent
+actifs**.
+
+| Option | Role |
+|---|---|
+| `--host` / `--port` / `--user` | cible de l'instance |
+| `--key` ou `--password` | authentification (ou `$PVE_ROOT_PASSWORD`) |
+| `--level 1..4` | niveau de durcissement |
+| `--plan cis\|anssi\|ceph\|stack` | plan applique |
+| `--dry-run` / `--yes` | simulation / non interactif |
+| `--audit` | audit de conformite immediat apres durcissement |
+
+Details, installation des dependances et depannage :
+[docs/LINUX.md](docs/LINUX.md).
+
+## Mesurer la conformite (cycle de lab)
+
+```bash
+python3 scripts/pve.py run --phase all --target core --level 2 \
+    --audit-extra anssi,ceph,cis13,communautaire --run-func
+```
+
+L'outillage est **integralement en Python** : il fonctionne sous Linux
+(Ubuntu, SLES, RHEL), macOS et Windows, sans dependance hors stdlib
+(paramiko et un moteur Chromium suffisent).
+
 > **Gestion du depot avec GitKraken** (client Git graphique du poste) :
 > [docs/GITKRAKEN.md](docs/GITKRAKEN.md) — creation du PAT, clone, push,
 > pull requests, resolution de conflits, depannage.
@@ -71,16 +116,10 @@ Proxmox documentees). Detail du choix et des candidats ecartes :
 ```
 pve9-hardening-lab/
 |-- scripts/
-|   |-- fetch-vendor.ps1     telecharge les projets, epingles sur un commit SHA
-|   |-- verify-vendor.ps1    verifie l'integrite (SHA256SUMS.txt)
-|   |-- prepare-vm.ps1       configure la VM VirtualBox (RAM/CPU/disk/NAT/serie)
-|   |-- vm-snapshot.ps1      create / list / restore / delete de snapshots
-|   |-- vm-image.ps1         sauvegarde / restauration de l'image de reference (clonage)
-|   |-- run-phase.ps1        orchestrateur : bootstrap|baseline|apply|verify|all
-|   |-- compare.ps1          rapport de comparaison avant / apres (+ tests fonctionnels)
-|   |-- render-pdf.ps1       rendu PDF via Chrome headless
-|   |-- publish-github.ps1   publication GitHub (PAT ou CLI GitKraken)
+|   |-- pve.py               CLI multiplateforme (point d'entree Python)
+|   |-- pve_hardening/       paquet Python (phases, rapports, SSH, PDF, VirtualBox)
 |   |-- ssh-tool.py          wrapper SSH/SFTP (paramiko) : test|exec|put|get
+|   |-- ssh-exec.py          execution d'une commande distante (usage unique)
 |-- guest/
 |   |-- audit-pve.sh         collecteur PVE/CIS de base, LECTURE SEULE
 |   |-- audit-cis13.sh       controles CIS Debian 13 officiels (IDs CIS)
@@ -94,24 +133,25 @@ pve9-hardening-lab/
 |   |-- apply-ceph.sh        durcissement Ceph
 |   |-- reset-pristine.sh    retour a l'etat propre
 |   |-- bootstrap-sshkey.sh  installe la cle publique du lab
-|-- vendor/                  artefacts des projets (generes par fetch-vendor.ps1)
+|-- vendor/                  artefacts des projets (generes par `pve.py fetch-vendor`)
 |-- answers/mrmasterbay.txt  reponses pour l'assistant interactif archive
 |-- reports/                 rapports PDF par guide + README
 |-- docs/PLAN-DE-TEST.md     protocole complet
 |-- docs/CHOIX-PROJET.md     analyse comparative des projets GitHub
+|-- docs/LINUX.md            utilisation sous Linux (Ubuntu, SLES, RHEL)
 |-- docs/DEPLOIEMENT-AUTOMATIQUE.md  creation de la VM PVE sans intervention
 |-- docs/GITKRAKEN.md        utilisation de GitKraken (PAT, push, PR, conflits)
 ```
 
 ## Publier le depot avec GitKraken
 
-```powershell
+```bash
 # 1. enregistrer le Personal Access Token dans la CLI GitKraken
 gk provider add github -t ghp_VOTRE_JETON
 gk whoami
 
 # 2. publier (le script verifie l'absence de secret avant le push)
-powershell -ExecutionPolicy Bypass -File scripts\publish-github.ps1 -Token ghp_VOTRE_JETON
+python3 scripts/pve.py publish --repo pve9-hardening-lab --token ghp_VOTRE_JETON
 ```
 
 Detail des operations (clone, push, pull request, conflits, depannage) :
@@ -119,22 +159,22 @@ Detail des operations (clone, push, pull request, conflits, depannage) :
 
 ## Demarrage rapide
 
-```powershell
+```bash
 # 0. artefacts
-powershell -ExecutionPolicy Bypass -File scripts\\fetch-vendor.ps1
-powershell -ExecutionPolicy Bypass -File scripts\\verify-vendor.ps1
+python3 scripts/pve.py fetch-vendor
+python3 scripts/pve.py verify-vendor
 
 # 1. VM (la creation automatisee de PVE est documentee dans
 #    docs/DEPLOIEMENT-AUTOMATIQUE.md)
-powershell -ExecutionPolicy Bypass -File scripts\\prepare-vm.ps1 -NoIso
+python3 scripts/pve.py prepare-vm --no-iso
 
 # 2. snapshot de reference (base propre, VM eteinte)
-powershell -ExecutionPolicy Bypass -File scripts\\vm-snapshot.ps1 -Action Create -Name pristine
+python3 scripts/pve.py snapshot --action create --name pristine
 
 # 3. cycle complet : baseline + audit fonctionnel AVANT, durcissement,
 #    audit + audit fonctionnel APRES, rapport PDF
-powershell -ExecutionPolicy Bypass -File scripts\\run-phase.ps1 -Phase all -Target core -Level 2 `
-    -AuditExtra anssi,ceph,cis13,communautaire -RunFunc
+python3 scripts/pve.py run --phase all --target core --level 2 \
+    --audit-extra anssi,ceph,cis13,communautaire --run-func
 ```
 
 ## Niveaux de durcissement

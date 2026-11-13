@@ -16,13 +16,16 @@ regression fonctionnelle.
 
 ## Workflow de contribution
 
-```powershell
+L'outillage est **integralement en Python** (`scripts/pve.py`), utilisable sous
+Linux (Ubuntu, SLES, RHEL), macOS et Windows.
+
+```bash
 # 1. branche de travail
 git switch -c feature/mon-contribut
 
 # 2. cycle de test complet (baseline + durcissement + audit + rapports)
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase all -Target core -Level 2 `
-    -AuditExtra anssi,ceph,cis13,communautaire -RunFunc
+python3 scripts/pve.py run --phase all --target core --level 2 \
+    --audit-extra anssi,ceph,cis13,communautaire --run-func
 
 # 3. commit + push
 git add -A
@@ -31,7 +34,14 @@ git push -u origin feature/mon-contribut
 ```
 
 Voir [docs/GITKRAKEN.md](docs/GITKRAKEN.md) pour l'equivalent via
-l'interface GitKraken.
+l'interface GitKraken et [docs/LINUX.md](docs/LINUX.md) pour le
+deploiement sous Linux.
+
+### Durcir une instance distante
+
+```bash
+python3 scripts/pve.py harden --host 10.0.0.5 --level 2 --password 'secret'
+```
 
 ## Regles de contribution
 
@@ -76,24 +86,22 @@ Verifiez avec `git status` avant de commiter.
 
 ## Style
 
+- **Python** : 4 espaces, annotations de type, lignes de 88 caracteres maximum
 - **shell** : 4 espaces, `shellcheck` si disponible, commentaires en francais
   sans accents dans les scripts (encodage cp1252 cote hote)
-- **PowerShell** : 4 espaces, `Write-Host` colore pour le suivi de cycle
 - **documentation** : Markdown, tableaux pour les resultats, code inline
   pour les commandes
 
 ## Tests avant commit
 
-```powershell
+```bash
 # syntaxe des scripts shell
-wsl -d Ubuntu -- bash -n guest/apply-homesec-core.sh
-wsl -d Ubuntu -- bash -n guest/apply-anssi.sh
-wsl -d Ubuntu -- bash -n guest/func-test-os.sh
+for f in guest/*.sh; do bash -n "$f" || echo "ERREUR $f"; done
 
-# syntaxe PowerShell
-$errors = $null
-[System.Management.Automation.Language.Parser]::ParseFile("scripts\run-phase.ps1", [ref]$null, [ref]$errors)
-if ($errors) { $errors }
+# syntaxe et compilation Python
+python3 -m compileall -q scripts/pve_hardening
+python3 scripts/pve.py --help
+python3 scripts/pve.py report --before artifacts/baseline-x --after artifacts/after-y
 ```
 
 ## Signalement de bug

@@ -8,7 +8,7 @@
 | VirtualBox | 7.2.12 r174389 | syntaxe `--nat-pf1`, `--uart-mode1=file` |
 | VM cible | `proxmox` (uuid `f4e60ee7-…`), ISO `proxmox-ve_9.2-1.iso` attachee | OK |
 | VT-x imbrique | **non supporte** (`Processor supports nested HW virtualization: no`) | pas de `/dev/kvm` dans la VM : les VMs PVE ne fonctionneront pas, les conteneurs LXC si |
-| VM avant preparation | RAM **64 Mo**, `x86-long-mode=off`, disque **2 Mo**, NAT sans redirection | **non bootable** : corrige par `prepare-vm.ps1` |
+| VM avant preparation | RAM **64 Mo**, `x86-long-mode=off`, disque **2 Mo**, NAT sans redirection | **non bootable** : corrige par `pve.py prepare-vm` |
 
 > Le manque de virtualisation imbriquee n'empêche pas le test de hardening : les
 > controles visent l'hyperviseur PVE lui-même (SSH, PAM, pare-feu, PVE API, noyau,
@@ -21,15 +21,15 @@ Proxmox, la lecture des resultats et les decisions d'arbitrage.
 
 ### Etape 0 — Recuperer et verifier les projets
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\fetch-vendor.ps1     # telecharge, epinglé sur commit
-powershell -ExecutionPolicy Bypass -File scripts\verify-vendor.ps1    # controle SHA256
+```bash
+python3 scripts/pve.py fetch-vendor     # telecharge, epinglé sur commit
+python3 scripts/pve.py verify-vendor    # controle SHA256
 ```
 
 ### Etape 1 — Preparer la VM
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\prepare-vm.ps1       # VM ETEINTE obligatoire
+```bash
+python3 scripts/pve.py prepare-vm       # VM ETEINTE obligatoire
 ```
 
 Corrige : `os-type=Debian_64`, 8 Go RAM, 4 CPU, `x86-long-mode=on`, disque 64 Go,
@@ -54,8 +54,8 @@ autologgué, acceptez l'avertissement du navigateur).
 
 ### Etape 3 — Ouvrir l'acces SSH automatise (bootstrap)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase bootstrap
+```bash
+python3 scripts/pve.py run --phase bootstrap
 ```
 
 Affiche une commande a coller une seule fois dans **Web UI -> Noeud -> Shell**. Elle
@@ -65,8 +65,8 @@ importance sur un noeud seul, mais a connaitre si vous ajoutez des noeuds.
 
 ### Etape 4 — Prendre une photographie AVANT
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase baseline
+```bash
+python3 scripts/pve.py run --phase baseline
 ```
 
 Deploie `guest/audit-pve.sh` (lecture seule) et recupere `artifacts/baseline-<ts>/`
@@ -132,8 +132,8 @@ son motif : aucune correction n'est masquee.
 
 ### Etape 5 — Faire un snapshot
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\vm-snapshot.ps1 -Action Create -Name pre-hardening
+```bash
+python3 scripts/pve.py snapshot --action create --name pre-hardening
 ```
 
 Le hardening est destructif par definition. Sans snapshot, une erreur (typiquement :
@@ -141,8 +141,8 @@ couper SSH ou la web UI) impose une reinstallation complete.
 
 ### Etape 6 — Appliquer le hardening
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase apply -Target core
+```bash
+python3 scripts/pve.py run --phase apply --target core
 ```
 
 Le script du lab accepte un **niveau CIS** : `LEVEL=1` (defaut), `LEVEL=2`, `LEVEL=3`.
@@ -180,11 +180,11 @@ sauvegarde chaque fichier touche dans `/root/hardening-backups/<ts>/`.
 
 ### Etape 7 — Comparer avant / apres et produire le rapport PDF
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run-phase.ps1 -Phase verify
+```bash
+python3 scripts/pve.py run --phase verify
 ```
 
-Appelle `scripts/compare.ps1` qui produit trois fichiers dans `artifacts/` :
+Appelle `scripts/pve.py report` qui produit trois fichiers dans `artifacts/` :
 
 | Fichier | Contenu |
 |---|---|
@@ -198,12 +198,12 @@ Le PDF met en avant quatre familles, dans cet ordre de priorite :
 controles avec leur statut avant et apres.
 
 Le rendu PDF ne depend d'aucun package : il utilise le moteur d'impression de
-Chrome ou Edge, tous deux presents sur Windows 11 (`scripts/render-pdf.ps1`).
+Chrome ou Edge, tous deux presents sur Windows 11 (`scripts/pve.py pdf`).
 
 ### Etape 8 — Rollback ou itération
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\vm-snapshot.ps1 -Action Restore -Name pre-hardening
+```bash
+python3 scripts/pve.py snapshot --action restore --name pre-hardening
 ```
 
 ## Ce qui est intrinsequement hors portee dans ce lab

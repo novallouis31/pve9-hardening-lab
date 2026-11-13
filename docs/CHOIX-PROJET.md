@@ -63,6 +63,6 @@ soit ~150 depots examines). Cinq candidats ont ete retenus pour analyse detaille
 | alexandreravelli | `c35a64617523299fa4e5396a72016973f6422510` | 2026-08-02 | v1.0.0 |
 | MrMasterbay | `44e0154bedfa5ecde2f557710c7108fc734c423e` | 2026-01-07 | — |
 
-Les artefacts sont telecharges sur ces commits precis par `scripts/fetch-vendor.ps1`
-et verifies par `scripts/verify-vendor.ps1` (`vendor/SHA256SUMS.txt`). Rien ne peut
+Les artefacts sont telecharges sur ces commits precis par `scripts/pve.py fetch-vendor`
+et verifies par `scripts/pve.py verify-vendor` (`vendor/SHA256SUMS.txt`). Rien ne peut
 donc changer entre deux executions du lab.
