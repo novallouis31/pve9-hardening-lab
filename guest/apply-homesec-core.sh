@@ -410,6 +410,29 @@ fi
 # (non-regression des privileges et de la synchronisation horaire) : sans
 # eux, ces tests seraient 'NA' et la non-regression OS ne serait pas
 # verifiable sur l'OS durci.
+# --- Depots apt exploitables -------------------------------------------------
+# 1. Les depots enterprise Proxmox (pve, ceph-squid) exigent une licence et
+#    repondent 401 : apt echoue alors sur TOUS les depots ("The repository ...
+#    is not signed") et plus aucun paquet ne peut etre installe. On les
+#    desactive (sans effet dans un lab).
+# 2. Les listes de paquets de l'image d'installation sont absentes ou
+#    perimees : il faut un apt-get update avant toute installation.
+if [ "$DRY_RUN" != "1" ]; then
+    for f in /etc/apt/sources.list.d/pve-enterprise.sources /etc/apt/sources.list.d/ceph.sources; do
+        if [ -f "$f" ]; then
+            mv "$f" "$f.disabled"
+            echo "  [ok] depot enterprise desactive : $(basename "$f")"
+        fi
+    done
+    # purge des index a zero octet (une panne DNS les laisse vides en cache :
+    # apt annonce alors "Hit" sans jamais les retelecharger)
+    find /var/lib/apt/lists -type f -size 0 -name '*_Packages*' -delete 2>/dev/null || true
+    rm -f /var/lib/apt/lists/*Partial* 2>/dev/null || true
+    if ! timeout 120 apt-get update -y >/dev/null 2>&1; then
+        echo "  [warn] apt-get update a echoue : certaines installations de paquets echoueront"
+    fi
+fi
+
 exec_cmd "apt-get install -y sudo chrony"
 if [ "$DRY_RUN" != "1" ] && command -v chronyd >/dev/null 2>&1; then
     exec_cmd "systemctl enable --now chrony" || exec_cmd "systemctl enable --now chronyd"
