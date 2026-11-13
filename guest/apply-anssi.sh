@@ -192,9 +192,15 @@ if [ "$DRY_RUN" != "1" ]; then
             echo "  [ok] depot enterprise desactive : $(basename "$f")"
         fi
     done
+    # purge des index a zero octet (une panne DNS les laisse vides en cache :
+    # apt annonce alors "Hit" sans jamais les retelecharger)
+    find /var/lib/apt/lists -type f -size 0 -name '*_Packages*' -delete 2>/dev/null || true
+    rm -f /var/lib/apt/lists/*Partial* 2>/dev/null || true
 fi
-exec_cmd "apt-get update -y"
-exec_cmd "apt-get install -y aide aide-common apparmor-utils rsyslog"
+# L'update est indispensable : sans lui, les listes de l'image d'installation
+# sont absentes ou perimees et AUCUN paquet ne peut etre installe.
+exec_cmd "timeout 180 apt-get update -y"
+exec_cmd "timeout 900 apt-get install -y aide aide-common apparmor-utils rsyslog"
 if [ "$DRY_RUN" != "1" ] && command -v aideinit >/dev/null 2>&1; then
   # 'aide --init' pose une question [yN] : on repond "yes" et on purge la base
   # existante pour eviter tout blocage interactif du script.
