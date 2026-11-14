@@ -103,7 +103,41 @@ python3 scripts/pve.py harden --host 10.0.0.5 --level 2 --password 'secret' --au
 bash /root/rollback-hardening.sh /root/hardening-backups/20261113_074520
 ```
 
-## 2. Rejouer le cycle de mesure complet
+## 2. De-durcir une instance (retour a l'etat d'origine)
+
+Pour qu'un noeud durci puisse **evoluer** (montee de version PVE 8 -> PVE 9,
+mise a jour de paquets), le de-hardening retire les mesures de durcissement et
+restaure l'etat d'origine.
+
+```bash
+# Client bash : IP + mot de passe root, aucune dependance Python
+bash scripts/deharden.sh --host 192.168.1.50 --password 'secret'
+
+# Cle SSH
+bash scripts/deharden.sh --host 10.0.0.5 --key ~/.ssh/id_ed25519
+
+# Simulation : affiche ce qui serait fait, ne modifie rien
+bash scripts/deharden.sh --host 10.0.0.5 --password 'secret' --dry-run
+
+# Equivalent Python (meme script distant)
+python3 scripts/pve.py deharden --host 192.168.1.50 --password 'secret'
+```
+
+| Option | Role |
+|---|---|
+| `--host` / `--port` / `--user` | cible de l'instance |
+| `--password` / `--key` | authentification |
+| `--dry-run` | simulation, aucune modification |
+| `--keep-packages` | conserve les paquets installes par le durcissement |
+| `--report` | rapport Markdown local |
+
+> Sous WSL (ou sur tout systeme de fichiers monte), une cle SSH lisible par
+> tous est refusee par OpenSSH : le client copie la cle dans `$HOME/.ssh`
+> (mode `600`) avant de l'utiliser.
+
+Guide complet : [DE-HARDENING.md](DE-HARDENING.md).
+
+## 3. Rejouer le cycle de mesure complet
 
 Pour un **rapport PDF avant/apres** (conformite + non-regression), on utilise
 la commande `run`, qui enchaine baseline, durcissement et rapport :
@@ -130,7 +164,7 @@ python3 scripts/pve.py report \
 Les artefacts sont ecrits dans `artifacts/`, les rapports livres dans
 `reports/`.
 
-## 3. Gestion des VM de laboratoire (VirtualBox)
+## 4. Gestion des VM de laboratoire (VirtualBox)
 
 ```bash
 # Creer un snapshot de reference
@@ -146,7 +180,7 @@ python3 scripts/pve.py snapshot --action delete  --name pristine --vm proxmox
 > casse le demarrage de Proxmox (GRUB ne trouve plus la racine). Utilisez
 > des **snapshots** : ils preservent l'UUID du disque.
 
-## 4. Artefacts de reference
+## 5. Artefacts de reference
 
 Les scripts de durcissement d'autres projets (pour comparaison) sont
 telecharges et verifies par empreinte SHA256 :
@@ -159,7 +193,7 @@ python3 scripts/pve.py verify-vendor
 Ils sont figes sur un commit SHA : le contenu ne peut pas changer entre deux
 executions, ce qui rend les tests reproductibles.
 
-## 5. Depannage
+## 6. Depannage
 
 | Symptome | Cause | Correctif |
 |---|---|---|
@@ -170,7 +204,7 @@ executions, ce qui rend les tests reproductibles.
 | `Timeout` pendant l'application | l'init AIDE ou une installation apt est longue | augmenter `--ssh-timeout` (defaut 3600 s) |
 | `OS.MOUNT._dev_shm` en echec apres redemarrage | `/dev/shm` n'etait pas declare dans `/etc/fstab` | corrige : le script declare les trois points de montage temporaires |
 
-## 6. Correspondance des anciennes commandes
+## 7. Correspondance des anciennes commandes
 
 L'outillage est **integralement en Python** : il n'y a plus de script
 PowerShell. La table ci-dessous donne l'equivalent de chaque ancien

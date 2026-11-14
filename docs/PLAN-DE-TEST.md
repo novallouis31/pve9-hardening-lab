@@ -206,6 +206,47 @@ Chrome ou Edge, tous deux presents sur Windows 11 (`scripts/pve.py pdf`).
 python3 scripts/pve.py snapshot --action restore --name pre-hardening
 ```
 
+### Etape 9 — De-hardening et montee de version (chaine complementaire)
+
+Le de-hardening doit permettre a un noeud **durci** d'evoluer (montee de
+version PVE 8 -> PVE 9). Le protocole de validation est le suivant :
+
+```bash
+# 1. baseline de l'etat NON durci
+python3 scripts/pve.py run --phase baseline --audit-extra anssi,ceph,cis13,communautaire --run-func
+
+# 2. durcissement
+python3 scripts/pve.py run --phase apply --target core --level 2
+python3 scripts/pve.py run --phase apply --target anssi --level 3
+python3 scripts/pve.py run --phase apply --target ceph --level 1
+
+# 3. reference durcie
+python3 scripts/pve.py run --phase verify --audit-extra anssi,ceph,cis13,communautaire --run-func
+
+# 4. de-hardening (client bash, IP + mot de passe root)
+bash scripts/deharden.sh --host 127.0.0.1 --port 2222 --key ~/.ssh/id_ed25519 --dry-run
+bash scripts/deharden.sh --host 127.0.0.1 --port 2222 --key ~/.ssh/id_ed25519
+
+# 5. l'etat restaure doit etre STRICTEMENT identique a la baseline
+python3 scripts/pve.py run --phase verify --audit-extra anssi,ceph,cis13,communautaire --run-func
+
+# 6. re-durcissement : la reference doit etre retrouvee a l'identique
+python3 scripts/pve.py run --phase apply --target core --level 2
+python3 scripts/pve.py run --phase apply --target anssi --level 3
+python3 scripts/pve.py run --phase apply --target ceph --level 1
+python3 scripts/pve.py run --phase verify --audit-extra anssi,ceph,cis13,communautaire --run-func
+```
+
+Sur un noeud **PVE 8**, l'etape 4 est suivie de la montee de version :
+
+```bash
+# depot PVE 9 + mise a jour officielle, puis redemarrage
+bash scripts/upgrade-pve9.sh        # depot pve-no-subscription, dist-upgrade, pve8to9 check
+reboot
+```
+
+Le rapport dedie est `reports/rapport-validation-deharden.md`.
+
 ## Ce qui est intrinsequement hors portee dans ce lab
 
 | Controle du guide | Raison |

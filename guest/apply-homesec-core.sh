@@ -38,6 +38,16 @@ mkdir -p "$BACKUP_DIR"
 # seulement ceux-la), sans risquer de retirer un paquet pre-existant.
 dpkg-query -W -f='${Package}\n' 2>/dev/null | sort > "$BACKUP_DIR/packages.before"
 
+# Manifeste des fichiers CREES / MODIFIES : le de-hardening s'en sert pour
+# savoir quels fichiers supprimer (crees) et quels fichiers restaurer
+# (modifies). Sans ce manifeste, il devrait deviner en comparant des dates,
+# ce qui est fragile quand l'horloge du noeud a saute.
+manifest() {
+    # $1 = chemin, $2 = created|modified
+    [ -d "$BACKUP_DIR" ] || mkdir -p "$BACKUP_DIR"
+    printf '%s\n' "$1" >> "$BACKUP_DIR/$2.list"
+}
+
 # ------------------------------------------------------------------- helpers
 APPLIED=""; SKIPPED=""
 log()  { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" | tee -a "$LOG"; }
@@ -104,6 +114,7 @@ write_file() {
         log "IDEMPOTENT: $path deja conforme"
         return 0
     fi
+    if [ -e "$path" ]; then manifest "$path" modified; else manifest "$path" created; fi
     backup "$path"
     if [ "$DRY_RUN" = "1" ]; then
         printf '    [DRY-RUN] ecriture %s (mode %s)\n' "$path" "$mode" | tee -a "$LOG"
@@ -379,6 +390,7 @@ Match Address $MGMT_CIDR
 write_file "$SSHD_DROP" 0600 "$SSH_CONF"
 if [ "$DRY_RUN" != "1" ]; then
     printf 'Acces reserve. Toute activite non autorisee est enregistre.\n' > /etc/issue.net
+manifest /etc/issue.net created
     chmod 0644 /etc/issue.net
     # cle pour le compte admin
     install -d -m 0700 -o "$ADMIN_USER" -g "$ADMIN_USER" "/home/$ADMIN_USER/.ssh"
@@ -634,6 +646,7 @@ block 1 "8. Pare-feu PVE : activation et regles SSH/GUI (guide 1.2.4)"
 ref "Guide PVE 9 § 1.2.4 Enable the PVE Firewall"
 FW=/etc/pve/firewall/cluster.fw
 backup "$FW"
+if [ -e "$FW" ]; then manifest "$FW" modified; else manifest "$FW" created; fi
 if [ "$DRY_RUN" != "1" ]; then
     mkdir -p /etc/pve/firewall
     cat > "$FW" <<EOF
@@ -797,6 +810,11 @@ ref "Guide PVE 9 § 1.2.5 - Default FORWARD Policy DROP"
 if [ "$DRY_RUN" != "1" ]; then
     mkdir -p "/etc/pve/nodes/$NODE_NAME"
     backup "/etc/pve/nodes/$NODE_NAME/firewall"
+    if [ -e "/etc/pve/nodes/$NODE_NAME/firewall" ]; then
+        manifest "/etc/pve/nodes/$NODE_NAME/firewall" modified
+    else
+        manifest "/etc/pve/nodes/$NODE_NAME/firewall" created
+    fi
     cat > "/etc/pve/nodes/$NODE_NAME/firewall" <<EOF
 [OPTIONS]
 enable: 1
@@ -858,6 +876,7 @@ block 3 "18. cron - restreint via cron.allow"
 ref "ANSSI - Restriction d'acces a cron"
 if [ "$DRY_RUN" != "1" ]; then
     echo root > /etc/cron.allow
+manifest /etc/cron.allow created
     chmod 600 /etc/cron.allow
 fi
 
@@ -918,6 +937,7 @@ if [ -n "$missing_pkgs" ]; then
 fi
 # ------------------------------------------------------------------- rollback
 if [ "$DRY_RUN" != "1" ]; then
+    manifest /root/rollback-hardening.sh created
     cat > /root/rollback-hardening.sh <<'EOF'
 #!/usr/bin/env bash
 set -u

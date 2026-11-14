@@ -41,7 +41,8 @@ block() { local need="$1" desc="$2"; if [ "$LEVEL" -lt "$need" ]; then printf '\
 exec_cmd() { log "EXEC: $*"; if [ "$DRY_RUN" = "1" ]; then printf '    [DRY-RUN] %s\n' "$*" | tee -a "$LOG"; return 0; fi; eval "$@" >>"$LOG" 2>&1 || { log "ECHEC: $*"; return 1; }; }
 backup() { [ -e "$1" ] || return 0; local d="$BACKUP_DIR$(dirname "$1")"; mkdir -p "$d"; local b="$d/$(basename "$1").$(date +%s%N)"; cp -a "$1" "$b"; }
 backup_mode() { [ -e "$1" ] || return 0; local d="$BACKUP_DIR$(dirname "$1")"; mkdir -p "$d"; printf '%s %s %s\n' "$(stat -c %a "$1")" "$(stat -c %U "$1")" "$(stat -c %G "$1")" > "$d/$(basename "$1").mode"; }
-write_file() { local p="$1" m="$2" c="$3"; backup "$p"; if [ "$DRY_RUN" = "1" ]; then printf '    [DRY-RUN] ecriture %s\n' "$p" | tee -a "$LOG"; return 0; fi; mkdir -p "$(dirname "$p")"; printf '%s\n' "$c" > "$p.tmp"; chmod "$m" "$p.tmp"; mv "$p.tmp" "$p"; }
+manifest() { [ -d "$BACKUP_DIR" ] || mkdir -p "$BACKUP_DIR"; printf '%s\n' "$1" >> "$BACKUP_DIR/$2.list"; }
+write_file() { local p="$1" m="$2" c="$3"; if [ -e "$p" ]; then manifest "$p" modified; else manifest "$p" created; fi; backup "$p"; if [ "$DRY_RUN" = "1" ]; then printf '    [DRY-RUN] ecriture %s\n' "$p" | tee -a "$LOG"; return 0; fi; mkdir -p "$(dirname "$p")"; printf '%s\n' "$c" > "$p.tmp"; chmod "$m" "$p.tmp"; mv "$p.tmp" "$p"; }
 
 log "ANSSI hardening LEVEL=$LEVEL DRY_RUN=$DRY_RUN"
 
@@ -194,6 +195,7 @@ if [ "$DRY_RUN" != "1" ]; then
         echo "  [ok] DNS ou depot non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
         cp -a /etc/resolv.conf /etc/resolv.conf.bak-lab 2>/dev/null || true
         printf 'search lab.local\nnameserver %s\n' "$DNS_NAT" > /etc/resolv.conf
+manifest /etc/resolv.conf created
     fi
 fi
 # Les depots enterprise Proxmox (pve + ceph-squid) exigent une licence et
@@ -234,6 +236,16 @@ ref "harbian 4.5 / BP-028"
 # apparmor-utils est installe ci-dessus : sans lui, aa-enforce est absent et
 # les profils restent en mode complain (controle ANS.APPARMOR.ENFORCE en echec).
 if command -v aa-enforce >/dev/null 2>&1; then
+  # Le profil busybox de Debian est incomplet : il n'autorise pas la lecture
+  # des bibliotheques partagees (libresolv.so.2), ce qui casse busybox (et
+  # donc update-initramfs) une fois en mode enforce. On lui ajoute
+  # l'abstraction de base avant de l'activer.
+  if [ -f /etc/apparmor.d/busybox ]; then
+    backup /etc/apparmor.d/busybox
+    if ! grep -q 'include <abstractions/base>' /etc/apparmor.d/busybox 2>/dev/null; then
+      sed -i '/^profile busybox/a\\  include <abstractions/base>' /etc/apparmor.d/busybox
+    fi
+  fi
   for prof in /etc/apparmor.d/*; do
     [ -f "$prof" ] || continue
     aa-enforce "$prof" >/dev/null 2>&1 || true
@@ -318,6 +330,7 @@ block 3 "ANSSI N3 - cron restreint (cron.allow)"
 ref "harbian 9.1.8 cron_users"
 if [ "$DRY_RUN" != "1" ]; then
   echo root > /etc/cron.allow
+manifest /etc/cron.allow created
   chmod 600 /etc/cron.allow
 fi
 
@@ -391,6 +404,7 @@ block 4 "ANSSI N4 - umask 077 pour root"
 ref "harbian 10.4 default_umask"
 if [ "$DRY_RUN" != "1" ]; then
   backup /root/.bashrc
+  manifest /root/.bashrc modified
   grep -q 'umask 077' /root/.bashrc 2>/dev/null || echo 'umask 077' >> /root/.bashrc
 fi
 

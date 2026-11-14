@@ -14,13 +14,13 @@
 #      /root/hardening-backups/<horodatage>/ (structure arborescente).
 #      Les attributs (mode, proprietaire) sont records a part dans des
 #      fichiers "<nom>.mode".
+#      Les scripts de durcissement enregistrent aussi un manifeste
+#      "created.list" / "modified.list" : le de-hardening sait ainsi quels
+#      fichiers supprimer (crees) et quels fichiers restaurer (modifies).
 #   2. Ce script restaure, pour chaque chemin, la sauvegarde la plus
 #      ANCIENNE (c'est l'etat d'origine : les sauvegardes ulterieures
 #      contiennent la version deja durcie).
-#   3. Les fichiers CREES par le durcissement (sans sauvegarde d'origine)
-#      sont supprimes. Un fichier de la liste "crees" qui possede une
-#      sauvegarde anterieure au durcissement est en fait pre-existant :
-#      il est restaure, pas supprime.
+#   3. Les fichiers CREES par le durcissement sont supprimes.
 #   4. Les actions d'etat (systemd, comptes, modules, PAM, depots apt)
 #      sont re-vertes.
 #   5. Un rapport Markdown (avant/apres) est produit.
@@ -29,6 +29,7 @@
 #   bash deharden-pve.sh --dry-run        # simule, ne modifie rien
 #   bash deharden-pve.sh                  # de-hardening complet
 #   bash deharden-pve.sh --keep-packages  # ne desinstalle pas les paquets
+#   bash deharden-pve.sh --force          # proceed meme sans sauvegarde
 #   bash deharden-pve.sh --report /tmp/x.md
 #
 # Securite :
@@ -110,9 +111,9 @@ log "de-hardening Proxmox VE - $TS (dry-run=$DRY_RUN)"
 
 # ---------------------------------------------------------------------------
 # Fichiers CREES par le durcissement (ils n'existaient pas avant).
-# La liste est derivee des scripts de durcissement ; lpresence d'une
-# sauvegarde anterieure au durcissement est verifiee a l'etape 2 (un tel
-# fichier pre-existait et doit etre restaure, pas supprime).
+# La liste est derivee des scripts de durcissement. Un fichier de cette
+# liste qui possede une sauvegarde anterieure au durcissement pre-existait :
+# il est alors restaure et non supprime.
 # ---------------------------------------------------------------------------
 CREATED_FILES="
 /etc/modprobe.d/99-pve-hardening.conf
@@ -141,8 +142,8 @@ CREATED_FILES="
 
 # Paquets installes par le durcissement : la liste reelle est calculee par
 # difference entre les paquets presents maintenant et ceux presents AVANT le
-# durcissement (fichier "packages.before" depose par les scripts de
-# durcissement). La liste ci-dessous n'est qu'un repli.
+# durcissement (fichier "packages.before" depose par les scripts). La liste
+# ci-dessous n'est qu'un repli.
 PACKAGES="aide aide-common apparmor-utils rsyslog auditd audispd-plugins fail2ban rkhunter unattended-upgrades apt-listchanges libpam-pwquality libpam-modules sudo chrony"
 
 # Paquets jamais desinstalles : les retirer casserait PAM ou SSH.
@@ -156,8 +157,8 @@ REENABLE_SERVICES="ctrl-alt-del.target avahi-daemon cups bluetooth rsh-server rs
 
 # ---------------------------------------------------------------------------
 step "0. Sauvegarde de securite"
+mkdir -p "$SAFETY" "$WORK"
 if [ "$DRY_RUN" != "1" ]; then
-    mkdir -p "$SAFETY" "$WORK"
     runsh "tar -C / -czf '$SAFETY/etat-avant-dehardening.tar.gz' \
         etc/ssh etc/pve etc/sysctl.d etc/modprobe.d etc/security etc/profile.d \
         etc/audit etc/fail2ban etc/rsyslog.d etc/systemd etc/login.defs etc/crontab \
@@ -177,26 +178,37 @@ INDEX="$WORK/index.txt"
 FOUND_ROOT=0
 for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
     [ -d "$root" ] || continue
-    FOUND_ROOT=1
-    find "$root" -type f 2>/dev/null | while IFS= read -r saved; do
-        rel="${saved#$root/}"
-        case "$rel" in
-            */shells.before|*/locked.before) continue ;;
-        esac
-        ts="${rel%%/*}"
-        rest="${rel#*/}"
-        case "$rest" in
-            *.mode) orig="/${rest%.mode}" ;;
-            *)      orig="/${rest%.*}" ;;
-        esac
-        mt=$(stat -c %Y "$saved" 2>/dev/null || echo 0)
-        printf '%s|%s|%s|%s\n' "$orig" "$mt" "$ts" "$saved"
-    done >> "$INDEX"
+    # On ne considere que les horodatages de la SESSION ACTUELLE du
+    # durcissement, c'est-a-dire ceux qui contiennent un manifeste
+    # (created.list / modified.list / packages.before). Les horodatages
+    # d'anciennes sessions (avant la restauration de l'instantane
+    # pristine) sont ignores : leurs sauvegardes correspondent a un etat
+    # different du systeme et ne doivent pas etre restaurees.
+    for ts_dir in "$root"/*/; do
+        [ -d "$ts_dir" ] || continue
+        ts=$(basename "$ts_dir")
+        if [ ! -f "$ts_dir/created.list" ] && [ ! -f "$ts_dir/modified.list" ] && [ ! -f "$ts_dir/packages.before" ]; then
+            log "  session ignoree (ancienne) : $root/$ts"
+            continue
+        fi
+        FOUND_ROOT=1
+        find "$ts_dir" -type f 2>/dev/null | while IFS= read -r saved; do
+            rel="${saved#$root/}"
+            case "$rel" in
+                */shells.before|*/locked.before|*/packages.before|*/created.list|*/modified.list) continue ;;
+                *.mode) continue ;;
+            esac
+            ts="${rel%%/*}"
+            rest="${rel#*/}"
+            orig="/${rest%.*}"
+            mt=$(stat -c %Y "$saved" 2>/dev/null || echo 0)
+            printf '%s|%s|%s|%s\n' "$orig" "$mt" "$ts" "$saved"
+        done >> "$INDEX"
+    done
 done
 if [ "$FOUND_ROOT" = "0" ]; then
     log "AUCUNE sauvegarde trouvee ($BACKUP_ROOT, $ANS_BACKUP_ROOT)"
     log "le noeud n'a probablement jamais ete durci par ces scripts"
-    log "ABANDON : aucune modification ne sera effectuee (utilisez --force pour passer outre)"
     if [ "$FORCE" != "1" ]; then
         exit 3
     fi
@@ -209,37 +221,66 @@ HARDENING_START=0
 first_ts=""
 if [ -s "$INDEX" ]; then
     first_ts=$(cut -d'|' -f3 "$INDEX" | sort | head -1)
-    HARDENING_START=$(date -d "${first_ts:0:8} ${first_ts:9:6}" +%s 2>/dev/null || echo 0)
+    HARDENING_START=$(date -d "${first_ts:0:8} ${first_ts:9:2}:${first_ts:11:2}:${first_ts:13:2}" +%s 2>/dev/null || echo 0)
     log "debut du durcissement (d apres les sauvegardes) : $first_ts (epoch $HARDENING_START)"
 fi
+
+# Manifestes declares par le durcissement : created.list = fichiers crees,
+# modified.list = fichiers modifies. La presence d'un fichier dans created.list
+# est la regle d'autorite : il est supprime (sauf s'il pre-existait, ce qui
+# est detecte par la presence d'une sauvegarde anterieure au durcissement).
+CREATED_MANIFEST=""
+MODIFIED_MANIFEST=""
+for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
+    [ -d "$root" ] || continue
+    for f in "$root"/*/created.list "$root"/*/modified.list; do
+        [ -f "$f" ] || continue
+        case "$f" in
+            *.created.list) CREATED_MANIFEST="$CREATED_MANIFEST$f " ;;
+            *.modified.list) MODIFIED_MANIFEST="$MODIFIED_MANIFEST$f " ;;
+        esac
+    done
+done
+log "manifestes de creation : $(printf '%s' "$CREATED_MANIFEST" | wc -w)"
+log "manifestes de modification : $(printf '%s' "$MODIFIED_MANIFEST" | wc -w)"
+
+# Fonction : un chemin est-il dans un manifeste de creation ?
+is_created() {
+    for f in $CREATED_MANIFEST; do
+        [ -f "$f" ] || continue
+        if grep -qx "$1" "$f" 2>/dev/null; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 # ---------------------------------------------------------------------------
 step "2. Restauration des fichiers sauvegardes"
 # Pour chaque chemin, on retient la sauvegarde de mtime minimal : c'est
-# l'etat d'origine. Un chemin de la liste "crees" dont toutes les
-# sauvegardes sont posterieures au durcissement est supprime.
+# l'etat d'origine. Un chemin declare "cree" par le durcissement est supprime
+# (sauf s'il pre-existait, c'est-a-dire s'il possede une sauvegarde dont
+# le mtime est anterieur au durcissement).
 RESTORED=""
 DELETED=""
 if [ -s "$INDEX" ]; then
-    # Chemin -> mtime minimal
     best=$(sort -t'|' -k1,1 -k2,2n "$INDEX" | awk -F'|' '
         !seen[$1]++ { print }')
     while IFS='|' read -r orig mt ts saved; do
         [ -n "$orig" ] || continue
-        case "$orig" in
-            *.mode) continue ;;
-        esac
         created=0
-        for c in $CREATED_FILES; do
-            [ "$c" = "$orig" ] && created=1 && break
-        done
+        is_created "$orig" && created=1
+        # Repli sur la liste codée en dur si les manifestes sont absents
+        if [ "$created" = "0" ]; then
+            for c in $CREATED_FILES; do
+                [ "$c" = "$orig" ] && created=1 && break
+            done
+        fi
         # Fichier cree par le durcissement : aucune sauvegarde anterieure
         if [ "$created" = "1" ] && [ "$mt" -ge "$HARDENING_START" ] 2>/dev/null; then
             log "  suppression (cree par le durcissement) : $orig"
             if [ "$DRY_RUN" != "1" ]; then
                 rm -f "$orig"
-                # les repliques de sauvegarde correspondantes sont retirees
-                rm -rf "$(dirname "$saved")" 2>/dev/null || true
             fi
             DELETED="$DELETED$orig
 "
@@ -262,66 +303,80 @@ fi
 
 # ---------------------------------------------------------------------------
 step "2b. Suppression des fichiers crees sans sauvegarde"
-if [ "$HARDENING_START" = "0" ]; then
+if [ "$HARDENING_START" = "0" ] && [ -z "$CREATED_MANIFEST" ]; then
     log "  ignore : aucune sauvegarde de durcissement, aucun fichier n'est supprime"
 else
-for f in $CREATED_FILES; do
-    [ -n "$f" ] || continue
-    # si le fichier a ete restaure a l'etape 2, il pre-existait : on le garde
-    if printf '%s\n' "$RESTORED" | grep -qx "$f"; then
-        log "  conserve (pre-existant, restaure) : $f"
-        continue
+    # Union des chemins declares "crees" par les manifestes.
+    if [ -n "$CREATED_MANIFEST" ]; then
+        CREATED_UNION=$(for f in $CREATED_MANIFEST; do [ -f "$f" ] && cat "$f"; done | sort -u)
+    else
+        # Ancien style de sauvegarde (sans manifeste) : repli sur la liste
+        # codée en dur.
+        CREATED_UNION="$CREATED_FILES"
     fi
-    if [ -e "$f" ]; then
+    for f in $CREATED_UNION; do
+        [ -n "$f" ] || continue
+        # si le fichier a ete restaure a l'etape 2, il pre-existait : on le garde
+        if printf '%s\n' "$RESTORED" | grep -qx "$f"; then
+            log "  conserve (pre-existant, restaure) : $f"
+            continue
+        fi
+        if [ -e "$f" ]; then
+            log "  suppression : $f"
+            if [ "$DRY_RUN" != "1" ]; then
+                rm -f "$f"
+            fi
+            DELETED="$DELETED$f
+"
+        fi
+    done
+    # Fichiers de configuration du pare-feu PVE : crees par le durcissement sur
+    # un noeud isole (ils n'existent pas dans une installation standard).
+    for f in /etc/pve/firewall/cluster.fw /etc/pve/nodes/*/firewall; do
+        [ -e "$f" ] || continue
+        if printf '%s\n' "$RESTORED" | grep -qx "$f"; then
+            log "  conserve (pre-existant, restaure) : $f"
+            continue
+        fi
         log "  suppression : $f"
         if [ "$DRY_RUN" != "1" ]; then
             rm -f "$f"
         fi
         DELETED="$DELETED$f
 "
-    fi
-done
-
-# Fichiers de configuration du pare-feu PVE : crees par le durcissement sur
-# un noeud isole (ils n'existent pas dans une installation standard).
-for f in /etc/pve/firewall/cluster.fw /etc/pve/nodes/*/firewall; do
-    [ -e "$f" ] || continue
-    # s'il existe une sauvegarde anterieure au durcissement, il est restaure
-    if [ -s "$INDEX" ]; then
-        p=$(printf '%s\n' "$INDEX" | awk -F'|' -v p="$f" '$1==p {print $2" "$4}' | sort -n | head -1)
-        mt=${p%% *}
-        if [ -n "$mt" ] && [ "$mt" -lt "$HARDENING_START" ] 2>/dev/null; then
-            log "  conserve (pre-existant) : $f"
-            continue
-        fi
-    fi
-    log "  suppression : $f"
-    if [ "$DRY_RUN" != "1" ]; then
-        rm -f "$f"
-    fi
-    DELETED="$DELETED$f
-"
-done
-fi   # fin du bloc "des sauvegardes existent"
+    done
+fi
 
 # ---------------------------------------------------------------------------
 step "2c. Restauration des permissions et proprietaires"
 # Les fichiers "<nom>.mode" contiennent : "<mode> <proprietaire> <groupe>".
-for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
+# On n'applique que le fichier .mode le plus ancien pour chaque chemin
+# (les .mode ulterieurs contiennent les permissions deja durcies).
+MODES=$(for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
     [ -d "$root" ] || continue
-    find "$root" -type f -name '*.mode' 2>/dev/null | while IFS= read -r mf; do
-        rel="${mf#$root/}"
-        ts="${rel%%/*}"
+    find "$root" -type f -name '*.mode' 2>/dev/null
+done | sort)
+if [ -n "$MODES" ]; then
+    # chemin -> .mode le plus ancien (par mtime)
+    best_modes=$(printf '%s\n' "$MODES" | while IFS= read -r mf; do
+        mt=$(stat -c %Y "$mf" 2>/dev/null || echo 0)
+        rel="${mf#*/}"
+        # chemin d'origine : on retire la racine + l'horodatage + le .mode
+        for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
+            case "$mf" in "$root"/*) rel="${mf#$root/}"; break ;; esac
+        done
         rest="${rel#*/}"
         orig="/${rest%.mode}"
+        printf '%s|%s|%s\n' "$orig" "$mt" "$mf"
+    done | sort -t'|' -k1,1 -k2,2n | awk -F'|' '!seen[$1]++ { print }')
+    while IFS='|' read -r orig mt mf; do
+        [ -n "$orig" ] || continue
+        [ -e "$orig" ] || continue
         meta=$(cat "$mf" 2>/dev/null)
         mode=$(printf '%s' "$meta" | awk '{print $1}')
         owner=$(printf '%s' "$meta" | awk '{print $2}')
         group=$(printf '%s' "$meta" | awk '{print $3}')
         [ -n "$mode" ] || continue
-        if [ ! -e "$orig" ]; then
-            continue
-        fi
         cur=$(stat -c %a "$orig" 2>/dev/null || echo "")
         if [ "$cur" = "$mode" ]; then
             continue
@@ -331,8 +386,10 @@ for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
             chmod "$mode" "$orig" 2>/dev/null || true
             [ -n "$owner" ] && chown "$owner:$group" "$orig" 2>/dev/null || true
         fi
-    done
-done
+    done <<EOF
+$best_modes
+EOF
+fi
 
 # ---------------------------------------------------------------------------
 step "3. Reversement des mesures d'etat"
@@ -388,9 +445,6 @@ done
 
 # ---------------------------------------------------------------------------
 step "4. Restauration de la configuration SSH (en dernier)"
-# Le drop-in SSH a ete supprime a l'etape 2. On verifie que la
-# configuration est valide AVANT de recharger le service : une
-# configuration invalide couperait l'acces SSH.
 if [ "$DRY_RUN" != "1" ]; then
     if sshd -t 2>/dev/null; then
         log "  configuration SSH valide"
@@ -405,8 +459,6 @@ fi
 
 # ---------------------------------------------------------------------------
 step "5. Depots apt retablis"
-# Les depots enterprise desactives par le durcissement sont renommes en
-# .disabled : on les restaure.
 for f in /etc/apt/sources.list.d/pve-enterprise.sources.disabled \
          /etc/apt/sources.list.d/ceph.sources.disabled; do
     if [ -e "$f" ]; then
@@ -417,23 +469,27 @@ done
 
 # ---------------------------------------------------------------------------
 step "6. Paquets installes par le durcissement"
-# Liste de reference : etat des paquets AVANT le premier durcissement
-# (fichier "packages.before" depose par les scripts de durcissement).
+# Liste de reference : etat des paquets AVANT le premier durcissement.
 PKG_REF=""
-if [ "$HARDENING_START" != "0" ]; then
-    for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
-        [ -d "$root" ] || continue
-        if [ -f "$root/$first_ts/packages.before" ]; then
-            PKG_REF="$root/$first_ts/packages.before"
-            break
-        fi
+if [ -n "$first_ts" ]; then
+    for ts in $(cut -d'|' -f3 "$INDEX" 2>/dev/null | sort -u); do
+        for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
+            if [ -f "$root/$ts/packages.before" ]; then
+                PKG_REF="$root/$ts/packages.before"
+                break
+            fi
+        done
+        [ -n "$PKG_REF" ] && break
     done
+fi
+if [ -n "$PKG_REF" ]; then
+    log "  reference des paquets (avant durcissement) : $PKG_REF"
 fi
 if [ "$KEEP_PACKAGES" = "1" ]; then
     log "  --keep-packages : les paquets sont conserves"
     if [ -n "$PKG_REF" ]; then
-        log "  paquets ajoutes par le durcissement :"
         dpkg-query -W -f='${Package}\n' 2>/dev/null | sort > "$WORK/packages.now"
+        log "  paquets ajoutes par le durcissement :"
         comm -13 "$PKG_REF" "$WORK/packages.now" 2>/dev/null | sed 's/^/    /' | tee -a "$LOG"
     fi
 else
