@@ -180,6 +180,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_hard.add_argument("--pdf", default="", help="chemin du rapport PDF")
     p_hard.add_argument("--ssh-timeout", type=int, default=3600, help="timeout SSH (secondes)")
 
+    # ------------------------------------------------------------- deharden
+    p_deh = sub.add_parser(
+        "deharden",
+        help="retire le durcissement d'une instance Proxmox (retour a l'etat d'origine)",
+        description=(
+            "Restaure un noeud Proxmox durci a son etat anterieur au hardening.\n"
+            "Les fichiers sauvegardes par le hardening sont restaures depuis\n"
+            "/root/hardening-backups/<horodatage>, les fichiers crees sont\n"
+            "supprimes et les mesures d'etat (systemd, PAM, comptes, modules)\n"
+            "sont re-vertes.\n\n"
+            "Exemples :\n"
+            "  pve.py deharden --host 192.168.1.50 --password secret\n"
+            "  pve.py deharden --host 10.0.0.5 --password secret --dry-run\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_deh.add_argument("--host", required=True, help="adresse IP ou nom d'hote de l'instance")
+    p_deh.add_argument("--port", type=int, default=22, help="port SSH")
+    p_deh.add_argument("--user", default="root", help="utilisateur SSH")
+    p_deh.add_argument("--key", default="", help="cle privee SSH")
+    p_deh.add_argument(
+        "--password",
+        default=os.environ.get("PVE_ROOT_PASSWORD", ""),
+        help="mot de passe root (ou variable PVE_ROOT_PASSWORD)",
+    )
+    p_deh.add_argument("--dry-run", action="store_true", help="simule sans modifier")
+    p_deh.add_argument("--keep-packages", action="store_true", help="conserve les paquets installes")
+    p_deh.add_argument("--report", default="", help="chemin du rapport Markdown")
+    p_deh.add_argument("--ssh-timeout", type=int, default=3600, help="timeout SSH (secondes)")
+
     # ------------------------------------------------------------ prepare-vm
     p_prep = sub.add_parser("prepare-vm", help="prepare la VM VirtualBox de laboratoire")
     p_prep.add_argument("--vm", default="proxmox", help="nom de la VM")
@@ -332,6 +362,26 @@ def main(argv: list[str] | None = None) -> int:
         )
         try:
             return harden(options)
+        except Exception as exc:
+            console.error("echec : {}".format(exc))
+            return 1
+
+    if args.command == "deharden":
+        from .deharden import DehardenOptions, deharden
+
+        options = DehardenOptions(
+            host=args.host,
+            port=args.port,
+            user=args.user,
+            key=args.key,
+            password=args.password,
+            dry_run=args.dry_run,
+            keep_packages=args.keep_packages,
+            report=args.report,
+            timeout=args.ssh_timeout,
+        )
+        try:
+            return deharden(options)
         except Exception as exc:
             console.error("echec : {}".format(exc))
             return 1

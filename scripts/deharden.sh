@@ -104,7 +104,12 @@ fi
 
 # --- mot de passe : askpass (jamais en ligne de commande) ---------------
 ASKPASS_SCRIPT=""
-cleanup() { [ -n "$ASKPASS_SCRIPT" ] && rm -f "$ASKPASS_SCRIPT"; }
+KEY_COPY=""
+cleanup() {
+    [ -n "$ASKPASS_SCRIPT" ] && rm -f "$ASKPASS_SCRIPT"
+    [ -n "$KEY_COPY" ] && rm -f "$KEY_COPY"
+    return 0
+}
 trap cleanup EXIT
 
 if [ -n "$PASSWORD" ]; then
@@ -120,10 +125,32 @@ EOF
     export DISPLAY="${DISPLAY:-:0}"
 fi
 
-SSH_CMD=(ssh $SSH_OPTS -p "$PORT" "${USER_NAME}@${HOST}")
+# --- authentification par cle : permissions SSH --------------------------
+# SSH refuse une cle privee lisible par tous ("UNPROTECTED PRIVATE KEY
+# FILE"). Sur un systeme de fichiers monte (/mnt/c sous WSL, /media sous
+# Linux), les permissions sont forcees a 777 : on copie donc la cle dans
+# un repertoire prive (~/.ssh) avant de l'utiliser.
+KEY_COPY=""
 if [ -n "$KEY" ]; then
-    SSH_CMD=(ssh $SSH_OPTS -i "$KEY" -p "$PORT" "${USER_NAME}@${HOST}")
-    SCP_CMD=(scp $SSH_OPTS -i "$KEY" -P "$PORT")
+    if [ ! -r "$KEY" ]; then
+        echo "Cle introuvable ou illisible : $KEY" >&2
+        exit 2
+    fi
+    KEY_DIR="${HOME}/.ssh"
+    mkdir -p "$KEY_DIR" || { echo "Impossible de creer $KEY_DIR" >&2; exit 2; }
+    chmod 700 "$KEY_DIR" 2>/dev/null || true
+    KEY_COPY="$KEY_DIR/deharden_key_$$"
+    if ! cp "$KEY" "$KEY_COPY" 2>/dev/null; then
+        echo "Copie de la cle impossible vers $KEY_COPY" >&2
+        exit 2
+    fi
+    chmod 600 "$KEY_COPY"
+fi
+
+SSH_CMD=(ssh $SSH_OPTS -p "$PORT" "${USER_NAME}@${HOST}")
+if [ -n "$KEY_COPY" ]; then
+    SSH_CMD=(ssh $SSH_OPTS -i "$KEY_COPY" -p "$PORT" "${USER_NAME}@${HOST}")
+    SCP_CMD=(scp $SSH_OPTS -i "$KEY_COPY" -P "$PORT")
 else
     SCP_CMD=(scp $SSH_OPTS -P "$PORT")
 fi

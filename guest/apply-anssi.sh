@@ -31,13 +31,16 @@ TS="$(date +%Y%m%d_%H%M%S)"
 BACKUP_DIR="/root/anssi-backups/$TS"
 LOG="/var/log/anssi-$TS.log"
 mkdir -p "$BACKUP_DIR"
+# Etat des paquets AVANT durcissement (voir apply-homesec-core.sh).
+dpkg-query -W -f='${Package}\n' 2>/dev/null | sort > "$BACKUP_DIR/packages.before"
 
 log()  { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" | tee -a "$LOG"; }
 step() { printf '\n=== %s ===\n' "$*" | tee -a "$LOG"; }
 ref()  { printf '    (ANSSI BP-028 : %s)\n' "$*" | tee -a "$LOG"; }
 block() { local need="$1" desc="$2"; if [ "$LEVEL" -lt "$need" ]; then printf '\n=== SKIP (niveau %s, LEVEL=%s) : %s ===\n' "$need" "$LEVEL" "$desc" | tee -a "$LOG"; return 1; fi; step "$desc"; return 0; }
 exec_cmd() { log "EXEC: $*"; if [ "$DRY_RUN" = "1" ]; then printf '    [DRY-RUN] %s\n' "$*" | tee -a "$LOG"; return 0; fi; eval "$@" >>"$LOG" 2>&1 || { log "ECHEC: $*"; return 1; }; }
-backup() { [ -e "$1" ] || return 0; local d="$BACKUP_DIR$(dirname "$1")"; mkdir -p "$d"; cp -a "$1" "$d/$(basename "$1").$(date +%s)"; }
+backup() { [ -e "$1" ] || return 0; local d="$BACKUP_DIR$(dirname "$1")"; mkdir -p "$d"; local b="$d/$(basename "$1").$(date +%s%N)"; cp -a "$1" "$b"; }
+backup_mode() { [ -e "$1" ] || return 0; local d="$BACKUP_DIR$(dirname "$1")"; mkdir -p "$d"; printf '%s %s %s\n' "$(stat -c %a "$1")" "$(stat -c %U "$1")" "$(stat -c %G "$1")" > "$d/$(basename "$1").mode"; }
 write_file() { local p="$1" m="$2" c="$3"; backup "$p"; if [ "$DRY_RUN" = "1" ]; then printf '    [DRY-RUN] ecriture %s\n' "$p" | tee -a "$LOG"; return 0; fi; mkdir -p "$(dirname "$p")"; printf '%s\n' "$c" > "$p.tmp"; chmod "$m" "$p.tmp"; mv "$p.tmp" "$p"; }
 
 log "ANSSI hardening LEVEL=$LEVEL DRY_RUN=$DRY_RUN"
@@ -48,6 +51,7 @@ log "ANSSI hardening LEVEL=$LEVEL DRY_RUN=$DRY_RUN"
 
 block 1 "ANSSI N1 - permissions /boot et ctrl-alt-del"
 ref "harbian 3.1/3.2 + 5.4"
+backup_mode /boot
 exec_cmd "chmod 700 /boot"
 exec_cmd "systemctl disable ctrl-alt-del.target"
 exec_cmd "systemctl mask ctrl-alt-del.target"
@@ -110,6 +114,15 @@ export TMOUT
 
 block 1 "ANSSI N1 - shells de comptes systeme non interactifs"
 ref "BP-028 [USR] daemon shell = /usr/sbin/nologin"
+# Memorisation des shells d'origine : sans ce fichier, le de-hardening ne
+# pourrait pas restaurer les comptes de systeme modifies.
+if [ "$DRY_RUN" != "1" ]; then
+    mkdir -p "$BACKUP_DIR/etc"
+    : > "$BACKUP_DIR/etc/shells.before"
+    for u in daemon bin sys games man lp mail news uucp proxy www-data backup list irc gnats nobody; do
+        getent passwd "$u" 2>/dev/null | cut -d: -f1,7 >> "$BACKUP_DIR/etc/shells.before"
+    done
+fi
 for u in daemon bin sys games man lp mail news uucp proxy www-data backup list irc gnats nobody; do
   if getent passwd "$u" >/dev/null 2>&1; then
     sh=$(getent passwd "$u" | cut -d: -f7)
@@ -261,6 +274,10 @@ fi
 
 block 2 "ANSSI N2 - permissions des fichiers de comptes (harbian 12.1-12.6)"
 ref "harbian 12.1/12.2/12.3/12.4/12.5/12.6"
+for pf in /etc/passwd /etc/shadow /etc/group /etc/gshadow \
+          /etc/passwd- /etc/shadow- /etc/group- /etc/gshadow-; do
+    backup_mode "$pf"
+done
 exec_cmd "chmod 0644 /etc/passwd"
 exec_cmd "chmod 0640 /etc/shadow"
 exec_cmd "chmod 0644 /etc/group"
@@ -373,6 +390,7 @@ done
 block 4 "ANSSI N4 - umask 077 pour root"
 ref "harbian 10.4 default_umask"
 if [ "$DRY_RUN" != "1" ]; then
+  backup /root/.bashrc
   grep -q 'umask 077' /root/.bashrc 2>/dev/null || echo 'umask 077' >> /root/.bashrc
 fi
 
@@ -380,7 +398,10 @@ block 4 "ANSSI N4 - suppression des comptes et cles autorisees inutiles"
 ref "harbian 13.1/13.5/13.14-13.17"
 if [ "$DRY_RUN" != "1" ]; then
   # aucun compte hors root ne doit avoir un UID 0
+  mkdir -p "$BACKUP_DIR/etc"
+  : > "$BACKUP_DIR/etc/locked.before"
   for u in $(awk -F: '$3 == 0 && $1 != "root" {print $1}' /etc/passwd); do
+    getent passwd "$u" 2>/dev/null | cut -d: -f1 >> "$BACKUP_DIR/etc/locked.before"
     exec_cmd "usermod --lock $u"
   done
   # UID/GID dupliques

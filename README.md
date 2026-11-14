@@ -40,6 +40,36 @@ actifs**.
 Details, installation des dependances et depannage :
 [docs/LINUX.md](docs/LINUX.md).
 
+## De-durcir une instance Proxmox (retour a l'etat d'origine)
+
+Pour **faire evoluer un noeud durci** (montee de version PVE 8 -> PVE 9,
+mise a jour de paquets), le durcissement peut bloquer l'operation : SSH
+restreint, PAM strict, modules noyau filtres, `/etc/fstab` modifie. Le
+de-hardening retire ces mesures et **restaure l'etat d'origine** a partir des
+sauvegardes produites pendant le durcissement.
+
+```bash
+# client bash : IP + mot de passe root (aucune dependance Python)
+bash scripts/deharden.sh --host 192.168.1.50 --password 'secret'
+
+# cle SSH
+bash scripts/deharden.sh --host 10.0.0.5 --key ~/.ssh/id_ed25519
+
+# simulation : affiche ce qui serait fait, ne modifie rien
+bash scripts/deharden.sh --host 10.0.0.5 --password 'secret' --dry-run
+
+# equivalent Python
+python3 scripts/pve.py deharden --host 192.168.1.50 --password 'secret'
+```
+
+Le client refuse une cible qui n'est pas un noeud Proxmox, copie le script
+distant sur la cible, l'execute et recupere le rapport Markdown. Le script
+distant verifie la configuration SSH (`sshd -t`) **avant** de recharger le
+service : l'acces ne peut pas etre coupe.
+
+Guide complet : [docs/DE-HARDENING.md](docs/DE-HARDENING.md) — rapport de
+validation : [reports/rapport-validation-deharden.md](reports/rapport-validation-deharden.md).
+
 ## Mesurer la conformite (cycle de lab)
 
 ```bash

@@ -33,6 +33,11 @@ NODE_NAME="$(hostname)"
 
 mkdir -p "$BACKUP_DIR"
 
+# Etat des paquets AVANT durcissement : le de-hardening s'en sert pour
+# desinstaller exactement les paquets ajoutes par le durcissement (et
+# seulement ceux-la), sans risquer de retirer un paquet pre-existant.
+dpkg-query -W -f='${Package}\n' 2>/dev/null | sort > "$BACKUP_DIR/packages.before"
+
 # ------------------------------------------------------------------- helpers
 APPLIED=""; SKIPPED=""
 log()  { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" | tee -a "$LOG"; }
@@ -70,8 +75,27 @@ backup() {
     [ -e "$f" ] || return 0
     local d="$BACKUP_DIR$(dirname "$f")"
     mkdir -p "$d"
-    cp -a "$f" "$d/$(basename "$f").$(date +%s)"
-    log "BACKUP: $f -> $d"
+    # Nom unique : deux sauvegardes du meme fichier dans la meme seconde
+    # partageraient le meme nom et la plus recente ecraserait la plus
+    # ancienne -- le de-hardening perdrait alors l'etat d'origine
+    # (cas reel sur /etc/fstab, sauvegarde deux fois en une seconde).
+    local b="$d/$(basename "$f").$(date +%s%N)"
+    cp -a "$f" "$b"
+    log "BACKUP: $f -> $b"
+}
+
+# Sauvegarde des attributs uniquement (mode, proprietaire, groupe) pour les
+# chemins dont le durcissement ne modifie que les permissions ( repertoires,
+# fichiers de comptes ). Le contenu n'est pas copie : seul un fichier
+# "<nom>.mode" est ecrit, relu par le de-hardening.
+backup_mode() {
+    local f="$1"
+    [ -e "$f" ] || return 0
+    local d="$BACKUP_DIR$(dirname "$f")"
+    mkdir -p "$d"
+    printf '%s %s %s\n' "$(stat -c %a "$f")" "$(stat -c %U "$f")" "$(stat -c %G "$f")" \
+        > "$d/$(basename "$f").mode"
+    log "BACKUP-MODE: $f -> $d/$(basename "$f").mode"
 }
 
 write_file() {
@@ -192,6 +216,7 @@ net.ipv6.conf.default.accept_ra = 0
 exec_cmd "sysctl --system"
 
 # --- ANSSI N1 : /boot reserve a root
+backup_mode /boot
 exec_cmd "chmod 0700 /boot"
 
 # --- ANSSI N1 : desactivation de Ctrl-Alt-Del
@@ -286,6 +311,7 @@ ref "CIS Debian 13 2.4.1.x"
 backup /etc/crontab
 exec_cmd "chmod 0600 /etc/crontab"
 for d in /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly; do
+    backup_mode "$d"
     [ -d "$d" ] && exec_cmd "chmod 0700 $d"
     [ -d "$d" ] && exec_cmd "find $d -type f -exec chmod 0600 {} +"
 done
@@ -364,9 +390,11 @@ if [ "$DRY_RUN" != "1" ]; then
 fi
 backup /etc/ssh/sshd_config
 exec_cmd "chmod 0600 /etc/ssh/sshd_config"
+backup_mode /etc/ssh/sshd_config.d
 [ -d /etc/ssh/sshd_config.d ] && exec_cmd "chmod 0700 /etc/ssh/sshd_config.d"
 exec_cmd "chmod 0600 /etc/ssh/ssh_host_*_key"
 exec_cmd "chmod 0644 /etc/ssh/ssh_host_*_key.pub"
+backup_mode /root/.ssh
 exec_cmd "chmod 0700 /root/.ssh"
 exec_cmd "chmod 0600 /root/.ssh/authorized_keys"
 
@@ -511,6 +539,12 @@ fi
 # --- CIS 5.3.3.1 / 5.4.1 : lignes PAM pam_faillock.so et pam_pwquality.so
 # avec les arguments CIS (deny=, unlock_time=, retry=, minlen=, minclass=).
 if [ "$DRY_RUN" != "1" ]; then
+    # Sauvegarde des fichiers PAM modifies : sans cela, le de-hardening ne
+    # pourrait pas revenir a la configuration PAM d'origine.
+    for pf in /etc/pam.d/common-auth /etc/pam.d/sshd /etc/pam.d/login \
+              /etc/pam.d/common-password /etc/pam.d/passwd; do
+        backup "$pf"
+    done
     python3 - <<'PYPAM'
 FL = "deny=5 unlock_time=900 even_deny_root root_unlock_time=900"
 PW = "retry=3 minlen=14 minclass=4"
@@ -535,8 +569,6 @@ def patch(path, anchor, params, module, prefix):
             continue
         if (not done and not stripped.startswith('#') and stripped
                 and anchor in stripped and stripped.startswith(prefix)):
-            out.append("%s\trequisite\t%s %s" % (prefix, module, params))
-            out.append("%s\trequisite\t%s %s" % (prefix, module, params))
             out.append("%s\trequisite\t%s %s" % (prefix, module, params))
             done = True
         out.append(l)
@@ -564,6 +596,9 @@ PYPAM
 fi
 
 # --- CIS 6.1.2.x / 6.1.3.x : permissions des fichiers de comptes
+for pf in /etc/passwd /etc/shadow /etc/group /etc/gshadow /root; do
+    backup_mode "$pf"
+done
 exec_cmd "chmod 0644 /etc/passwd"
 exec_cmd "chmod 0640 /etc/shadow"
 exec_cmd "chmod 0644 /etc/group"
