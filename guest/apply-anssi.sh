@@ -194,8 +194,12 @@ if [ "$DRY_RUN" != "1" ]; then
     if ! getent hosts deb.debian.org >/dev/null 2>&1 || ! timeout 30 apt-get update >/dev/null 2>&1; then
         echo "  [ok] DNS ou depot non fonctionnel : bascule sur le DNS du NAT VirtualBox ($DNS_NAT)"
         cp -a /etc/resolv.conf /etc/resolv.conf.bak-lab 2>/dev/null || true
+        if [ -e /etc/resolv.conf ]; then
+            manifest /etc/resolv.conf modified
+        else
+            manifest /etc/resolv.conf created
+        fi
         printf 'search lab.local\nnameserver %s\n' "$DNS_NAT" > /etc/resolv.conf
-manifest /etc/resolv.conf created
     fi
 fi
 # Les depots enterprise Proxmox (pve + ceph-squid) exigent une licence et
@@ -329,8 +333,12 @@ exec_cmd "update-initramfs -u"
 block 3 "ANSSI N3 - cron restreint (cron.allow)"
 ref "harbian 9.1.8 cron_users"
 if [ "$DRY_RUN" != "1" ]; then
-  echo root > /etc/cron.allow
-manifest /etc/cron.allow created
+  if [ -e /etc/cron.allow ]; then
+  manifest /etc/cron.allow modified
+else
+  manifest /etc/cron.allow created
+fi
+echo root > /etc/cron.allow
   chmod 600 /etc/cron.allow
 fi
 

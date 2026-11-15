@@ -389,8 +389,15 @@ Match Address $MGMT_CIDR
 "
 write_file "$SSHD_DROP" 0600 "$SSH_CONF"
 if [ "$DRY_RUN" != "1" ]; then
-    printf 'Acces reserve. Toute activite non autorisee est enregistre.\n' > /etc/issue.net
-manifest /etc/issue.net created
+    # La banniere pre-existe sur une installation PVE standard : elle doit etre
+# sauvegardee AVANT ecrasement, sinon le de-hardening ne peut pas la restaurer.
+if [ -e /etc/issue.net ]; then
+    manifest /etc/issue.net modified
+    backup /etc/issue.net
+else
+    manifest /etc/issue.net created
+fi
+printf 'Acces reserve. Toute activite non autorisee est enregistre.\n' > /etc/issue.net
     chmod 0644 /etc/issue.net
     # cle pour le compte admin
     install -d -m 0700 -o "$ADMIN_USER" -g "$ADMIN_USER" "/home/$ADMIN_USER/.ssh"
@@ -875,8 +882,15 @@ fi
 block 3 "18. cron - restreint via cron.allow"
 ref "ANSSI - Restriction d'acces a cron"
 if [ "$DRY_RUN" != "1" ]; then
-    echo root > /etc/cron.allow
-manifest /etc/cron.allow created
+    # /etc/cron.allow n'existe pas sur une installation standard, mais il faut le
+# traiter comme les autres fichiers (sauvegarde + manifeste conditionnel).
+if [ -e /etc/cron.allow ]; then
+    manifest /etc/cron.allow modified
+    backup /etc/cron.allow
+else
+    manifest /etc/cron.allow created
+fi
+echo root > /etc/cron.allow
     chmod 600 /etc/cron.allow
 fi
 

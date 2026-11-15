@@ -236,8 +236,8 @@ for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
     for f in "$root"/*/created.list "$root"/*/modified.list; do
         [ -f "$f" ] || continue
         case "$f" in
-            *.created.list) CREATED_MANIFEST="$CREATED_MANIFEST$f " ;;
-            *.modified.list) MODIFIED_MANIFEST="$MODIFIED_MANIFEST$f " ;;
+            */created.list) CREATED_MANIFEST="$CREATED_MANIFEST$f " ;;
+            */modified.list) MODIFIED_MANIFEST="$MODIFIED_MANIFEST$f " ;;
         esac
     done
 done
