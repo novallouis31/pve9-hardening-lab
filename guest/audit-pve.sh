@@ -20,11 +20,19 @@ set -u
 export LC_ALL=C
 
 OUT_DIR="${1:-/tmp/pve-audit}"
+# Le repertoire de sortie est recree a chaque execution. Sans cela, checks.tsv
+# (ecrit en ajout, cf. chk()) conserverait les lignes des audits precedents :
+# un artefact de collecte contiendrait alors plusieurs passes melangees et la
+# synthese du rapport deviendrait fausse.
+if [ -n "$OUT_DIR" ] && [ "$OUT_DIR" != "/" ]; then
+    rm -rf "$OUT_DIR" 2>/dev/null || true
+fi
 mkdir -p "$OUT_DIR" 2>/dev/null || OUT_DIR="/tmp/pve-audit-$$"
 mkdir -p "$OUT_DIR"
 
 PASS_COUNT=0; FAIL_COUNT=0; NA_COUNT=0; INFO_COUNT=0
 CHECK_LINES="$OUT_DIR/checks.tsv"
+: > "$CHECK_LINES"
 
 # Toute la sortie est capturable dans un fichier ET affichee dans le terminal.
 exec > >(tee "$OUT_DIR/audit.txt") 2>&1

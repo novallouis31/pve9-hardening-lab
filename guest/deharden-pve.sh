@@ -537,7 +537,14 @@ else
                 continue
             fi
             log "    suppression du paquet $p"
-            runsh "DEBIAN_FRONTEND=noninteractive apt-get remove -y '$p' 2>&1 | tail -3"
+            runsh "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 remove -y '$p' >/dev/null 2>&1"
+            if [ "$DRY_RUN" = "1" ]; then
+                PACKAGES_REMOVED="$PACKAGES_REMOVED $p"
+            elif dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "^install ok installed$"; then
+                log "    ECHEC : $p est toujours installe"
+            else
+                PACKAGES_REMOVED="$PACKAGES_REMOVED $p"
+            fi
         done < "$WORK/packages.to-remove"
     else
         log "  aucune reference packages.before : desinstallation de la liste par defaut"
@@ -549,7 +556,14 @@ else
             [ "$protected" = "1" ] && continue
             if dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "^install ok installed$"; then
                 log "    suppression du paquet $p"
-                runsh "DEBIAN_FRONTEND=noninteractive apt-get remove -y '$p' 2>&1 | tail -3"
+                runsh "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 remove -y '$p' >/dev/null 2>&1"
+                if [ "$DRY_RUN" = "1" ]; then
+                    PACKAGES_REMOVED="$PACKAGES_REMOVED $p"
+                elif dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "^install ok installed$"; then
+                    log "    ECHEC : $p est toujours installe"
+                else
+                    PACKAGES_REMOVED="$PACKAGES_REMOVED $p"
+                fi
             fi
         done
     fi
@@ -563,26 +577,55 @@ runsh "sysctl --system 2>/dev/null || true"
 # --- Reversion de l'etat d'execution ------------------------------------
 # Les valeurs appliquees a chaud par le durcissement persistent apres la
 # suppression de ses fichiers de configuration ; sysctl --system ne les
-# remet pas a zero (il ne charge que les valeurs declarees). On les ramene
-# donc explicitement aux valeurs par defaut du noyau/Debian.
-log "  reversion des sysctl durcis (valeurs par defaut)"
-for kv in \
-    "kernel.unprivileged_bpf_disabled=0" \
-    "net.core.bpf_jit_harden=0" \
-    "kernel.yama.ptrace_scope=0" \
-    "kernel.dmesg_restrict=0" \
-    "kernel.kptr_restrict=0" \
-    "net.ipv4.conf.all.accept_redirects=0" \
-    "net.ipv4.conf.default.accept_redirects=0" \
-    "net.ipv4.conf.all.send_redirects=1" \
-    "net.ipv4.conf.default.send_redirects=1" \
-    "net.ipv4.icmp_echo_ignore_broadcasts=1" \
-    "net.ipv6.conf.all.accept_redirects=0" \
-    "net.ipv6.conf.default.accept_redirects=0" \
-    "net.ipv6.conf.all.accept_ra=0" \
-    "net.ipv6.conf.default.accept_ra=0"; do
-    runsh "sysctl -w '$kv' 2>/dev/null || true"
-done
+# remet pas a zero (il ne charge que les valeurs declarees). On restaure donc
+# la photographie prise par le durcissement AVANT sa premiere modification.
+# Rejouer des "valeurs par defaut" supposees serait faux : sur Debian 13,
+# kernel.dmesg_restrict et kernel.yama.ptrace_scope valent deja 1, les remettre
+# a 0 DEGRADERAIT la posture par rapport a l'etat d'origine.
+SYSCTL_REF=""
+if [ -s "$INDEX" ]; then
+    for ts in $(cut -d'|' -f3 "$INDEX" 2>/dev/null | sort -u); do
+        for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
+            if [ -f "$root/$ts/sysctl.before" ]; then
+                SYSCTL_REF="$root/$ts/sysctl.before"
+                break 2
+            fi
+        done
+    done
+fi
+
+if [ -n "$SYSCTL_REF" ]; then
+    log "  restauration des parametres noyau d'origine ($SYSCTL_REF)"
+    # On ne reecrit que les cles qui divergent reellement : le reste est deja
+    # conforme (sysctl --system vient de recharger les fichiers du systeme).
+    SYSCTL_NOW="$WORK/sysctl.now"
+    sysctl -a 2>/dev/null | awk 'index($0, " = ") > 0 {
+        i = index($0, " = ");
+        print substr($0, 1, i - 1) "=" substr($0, i + 3)
+    }' > "$SYSCTL_NOW"
+    SYSCTL_RESTORED=0
+    while IFS= read -r kv; do
+        [ -n "$kv" ] || continue
+        key="${kv%%=*}"
+        # Ne toucher qu'aux parametres modifiables (pas d'entree virtuelle
+        # ou en lecture seule) ; les erreurs restent non bloquantes.
+        grep -qxF "$kv" "$SYSCTL_NOW" && continue
+        runsh "sysctl -w '$kv' 2>/dev/null || true"
+        SYSCTL_RESTORED=$((SYSCTL_RESTORED + 1))
+    done < "$SYSCTL_REF"
+    log "  parametres noyau remis a leur valeur d'origine : $SYSCTL_RESTORED"
+else
+    # Repli pour les noeuds durcis par une version anterieure (pas de
+    # photographie) : on ne remet que les valeurs dont le defaut Debian est
+    # connu comme plus faible que le durcissement, jamais l'inverse.
+    log "  pas de photographie sysctl.before : reversion sur liste de repli"
+    for kv in \
+        "kernel.unprivileged_bpf_disabled=0" \
+        "net.core.bpf_jit_harden=0" \
+        "kernel.kptr_restrict=0"; do
+        runsh "sysctl -w '$kv' 2>/dev/null || true"
+    done
+fi
 
 # AppArmor : repasser les profils en mode complain (non bloquant)
 if command -v aa-complain >/dev/null 2>&1; then
@@ -606,9 +649,15 @@ runsh "mount -o remount,suid,dev,exec /tmp 2>/dev/null || true"
 runsh "mount -o remount,suid,dev,exec /var/tmp 2>/dev/null || true"
 runsh "mount -o remount,suid,dev,exec /dev/shm 2>/dev/null || true"
 
-# Services rendus actifs par le durcissement
+# Services rendus actifs par le durcissement.
+# On desactive, mais on NE masque PAS : un mask laisse
+# /etc/systemd/system/unattended-upgrades.service -> /dev/null, orphelin apres
+# la desinstallation du paquet, et un re-durcissement echouerait alors sur
+# 'systemctl enable unattended-upgrades' ("Unit file is masked").
 runsh "systemctl disable --now unattended-upgrades 2>/dev/null || true"
-runsh "systemctl mask unattended-upgrades 2>/dev/null || true"
+runsh "systemctl unmask unattended-upgrades 2>/dev/null || true"
+runsh "rm -f /etc/systemd/system/unattended-upgrades.service 2>/dev/null || true"
+runsh "systemctl daemon-reload 2>/dev/null || true"
 
 # ---------------------------------------------------------------------------
 step "8. Verification finale"
@@ -696,8 +745,14 @@ step "Rapport"
     echo ""
     if [ "$KEEP_PACKAGES" = "1" ]; then
         echo "Conserves (option --keep-packages) : \`$PACKAGES\`"
+    elif [ -n "$(echo $PACKAGES_REMOVED)" ]; then
+        if [ "$DRY_RUN" = "1" ]; then
+            echo "A desinstaller (simulation) : \`$(echo $PACKAGES_REMOVED)\`"
+        else
+            echo "Desinstalles : \`$(echo $PACKAGES_REMOVED)\`"
+        fi
     else
-        echo "Desinstalles : \`$PACKAGES\`"
+        echo "Aucun paquet installe par le durcissement n'etait present."
     fi
     echo ""
     echo "## Verification"

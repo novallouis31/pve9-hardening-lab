@@ -366,13 +366,20 @@ if command -v apt-get >/dev/null 2>&1; then
     else
         twarn "OS.APT.CHECK" "apt-get check a signale un probleme"
     fi
-    # Le depot doit etre joignable : sans DNS, aucune mise a jour de
+    # Le depot Debian doit etre joignable : sans DNS, aucune mise a jour de
     # securite n'est possible (c'est un defaut fonctionnel de l'OS).
-    if timeout 60 apt-get update >/dev/null 2>&1; then
-        tpass "OS.APT.UPDATE" "apt-get update operationnel (depot joignable)"
+    # En revanche un noeud SANS abonnement Proxmox repond 401 sur
+    # pve-enterprise / ceph : c'est l'etat d'usine de PVE, pas une regression.
+    # On ne retient donc que les erreurs qui ne concernent pas ces depots.
+    aptlog=$(mktemp 2>/dev/null || echo /tmp/apt-func.$$)
+    if timeout 90 apt-get -o DPkg::Lock::Timeout=60 update >"$aptlog" 2>&1; then
+        tpass "OS.APT.UPDATE" "apt-get update operationnel (depots joignables)"
+    elif ! grep -E '^(E|Err):' "$aptlog" 2>/dev/null | grep -qvE 'pve-enterprise|enterprise|ceph|401'; then
+        tpass "OS.APT.UPDATE" "depots Debian joignables (401 enterprise sans abonnement ignore)"
     else
         tfail "OS.APT.UPDATE" "apt-get update en echec : depot injoignable (DNS ?)"
     fi
+    rm -f "$aptlog"
 else
     tna "OS.APT.CHECK" "apt-get absent"
 fi

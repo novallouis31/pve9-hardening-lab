@@ -113,6 +113,7 @@ session de sauvegarde :
 | `created.list` | chemins **crees** par le durcissement (a supprimer) |
 | `modified.list` | chemins **modifies** (a restaurer) |
 | `packages.before` | paquets installes avant le durcissement (reference du delta) |
+| `sysctl.before` | **tous** les parametres noyau avant le durcissement (reversion exacte) |
 
 Une seule session est prise en compte par racine de sauvegarde : la plus
 **ancienne** qui contient un manifeste. Les sessions heritees (anterieures a
@@ -163,16 +164,19 @@ suppression de ses fichiers de configuration (`sysctl --system` ne remet pas
 a zero une valeur absente des fichiers). Le de-hardening les ramene donc
 explicitement :
 
-- **sysctl** : les valeurs ANSSI/CIS sont repassees aux valeurs par defaut du
-  noyau (`unprivileged_bpf_disabled`, `bpf_jit_harden`, `yama.ptrace_scope`,
-  `dmesg_restrict`, `kptr_restrict`, redirecteurs IPv4/IPv6, RA IPv6) ;
+- **sysctl** : les parametres noyau sont remis a la valeur photographiee par le
+  durcissement (`sysctl.before`, prise avant sa premiere modification), et non
+  a des « valeurs par defaut » supposees. C'est indispensable : sur Debian 13,
+  `kernel.dmesg_restrict` et `kernel.yama.ptrace_scope` valent deja `1`, donc
+  les remettre a `0` degraderait la posture par rapport a l'etat d'origine ;
 - **AppArmor** : les profils sont repasses en mode *complain*
   (`aa-complain`), c'est-a-dire non bloquants ;
 - **montages** : `/tmp`, `/var/tmp` et `/dev/shm` sont remontes sans les
   options `nosuid`/`nodev`/`noexec` ajoutees par le durcissement ;
 - **AIDE** : la base construite par le durcissement est supprimee ;
-- **services** : `unattended-upgrades` est desactive et masque,
-  `ctrl-alt-del.target` est reactive.
+- **services** : `unattended-upgrades` est arrete, desactive **et demasque**
+  (un mask laisserait une unite orpheline qui ferait echouer un futur
+  re-durcissement), `ctrl-alt-del.target` est reactive.
 
 > Ces ecarts d'etat d'execution disparaissent apres un redemarrage. Ils ne
 > bloquent pas une montee de version : l'acces SSH, les services Proxmox et
@@ -233,6 +237,11 @@ Le generateur selectionne le repertoire le plus recent de chaque etape
 (`artifacts/baseline-*`, `hardened-*`, `dehardened-*`, `rehardened-*` et les
 suites `func-*` correspondantes) : aucun chiffre n'est ecrit en dur.
 
+Chaque repertoire d'artefact ne contient **qu'une seule passe** : le collecteur
+reinitialise son repertoire de sortie distant avant chaque audit. Sans cela,
+`checks.tsv` (ecrit en ajout) accumulerait les audits precedents et un
+artefact contiendrait plusieurs centaines de lignes pour 160 controles.
+
 ## Depannage
 
 | Symptome | Cause | Correctif |
@@ -247,3 +256,6 @@ suites `func-*` correspondantes) : aucun chiffre n'est ecrit en dur.
 | un module noyau reste bloque | `update-initramfs` a echoue | `update-initramfs -u -v` puis redemarrer |
 | VM `aborted` pendant une chaine longue | derive d'horloge de l'invite (snapshot ancien) ou audio emule sur hote Windows | `VBoxManage modifyvm <vm> --audio=none --paravirt-provider=kvm`, puis resynchroniser l'horloge (`date -s`, `hwclock --systohc`) avant de relancer |
 | `Guest seems to be unresponsive` dans `VBox.log` | l'hote a affame la VM (I/O lourdes, autre tache) | relancer la chaine sans travail parallele ; verifier `TM: catch-up` |
+| `Could not get lock /var/lib/dpkg/lock-frontend ... (unattended-upgr)` pendant un durcissement | `unattended-upgrades`, installe a la section 7, demarre aussitot une passe APT qui conserve le verrou `dpkg` | corrige : le module core arrete les passes APT (`apt_stop_background`) apres la pose du paquet et toutes les installations passent par `apt_install` (`DPkg::Lock::Timeout=300`) |
+| `Unit unattended-upgrades.service is masked` au re-durcissement | le de-hardening masquait le service ; le lien `/etc/systemd/system/unattended-upgrades.service -> /dev/null` survit a la desinstallation | corrige : le de-hardening fait `systemctl unmask` et supprime l'unite orpheline ; le durcissement fait `systemctl unmask` avant `enable` |
+| `OS.APT.UPDATE` en echec sur un noeud sans abonnement | `pve-enterprise` / `ceph` repondent 401 : c'est l'etat d'usine de PVE, pas une regression | corrige : le test fonctionnel ignore les erreurs 401 de ces deux depots et ne retient que celles des depots Debian |

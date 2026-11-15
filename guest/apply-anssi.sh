@@ -59,6 +59,16 @@ exec_cmd "systemctl mask ctrl-alt-del.target"
 
 block 1 "ANSSI N1 - sysctl ANSSI (bpf, jit, ptrace)"
 ref "harbian 1.5.3/1.5.5/1.5.8/1.5.9 + BP-028 [SYS]"
+# Photographie des parametres noyau AVANT modification (cf. apply-homesec-core.sh).
+# Elle rend le de-hardening exact : il rejoue les valeurs d'origine au lieu de
+# supposer des "valeurs par defaut" qui peuvent etre plus faibles que celles
+# livrees par Debian.
+if [ "$DRY_RUN" != "1" ]; then
+    sysctl -a 2>/dev/null | awk 'index($0, " = ") > 0 {
+        i = index($0, " = ");
+        print substr($0, 1, i - 1) "=" substr($0, i + 3)
+    }' > "$BACKUP_DIR/sysctl.before"
+fi
 write_file /etc/sysctl.d/98-anssi.conf 0644 "\
 # Genere par apply-anssi.sh - ANSSI BP-028 niveau M
 kernel.unprivileged_bpf_disabled = 1
@@ -218,8 +228,20 @@ if [ "$DRY_RUN" != "1" ]; then
 fi
 # L'update est indispensable : sans lui, les listes de l'image d'installation
 # sont absentes ou perimees et AUCUN paquet ne peut etre installe.
-exec_cmd "timeout 180 apt-get update -y"
-exec_cmd "timeout 900 apt-get install -y aide aide-common apparmor-utils rsyslog"
+# Les passes APT automatiques (unattended-upgrades configure par le module
+# core) tiennent le verrou dpkg : on les arrete et on laisse apt patienter
+# (DPkg::Lock::Timeout) au lieu d'echouer.
+if [ "$DRY_RUN" != "1" ]; then
+    for unit in unattended-upgrades.service apt-daily.service apt-daily-upgrade.service; do
+        systemctl stop "$unit" >/dev/null 2>&1 || true
+    done
+fi
+exec_cmd "timeout 180 apt-get -o DPkg::Lock::Timeout=300 update -y"
+exec_cmd "timeout 900 apt-get -o DPkg::Lock::Timeout=300 install -y aide aide-common apparmor-utils rsyslog"
+# Les minuteries de mises a jour automatiques sont reactivees apres coup.
+if [ "$DRY_RUN" != "1" ]; then
+    systemctl start apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+fi
 if [ "$DRY_RUN" != "1" ] && command -v aideinit >/dev/null 2>&1; then
   # 'aide --init' pose une question [yN] : on repond "yes" et on purge la base
   # existante pour eviter tout blocage interactif du script.

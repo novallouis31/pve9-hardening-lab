@@ -80,6 +80,27 @@ exec_cmd() {
     return 0
 }
 
+# apt-get install tolerant au verrou dpkg. L'installation d'unattended-upgrades
+# demarre immediatement une passe APT (processus 'unattended-upgr') qui garde
+# /var/lib/dpkg/lock-frontend pendant plusieurs minutes : sans attente, toutes
+# les installations suivantes echouent avec
+#   E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process N
+# DPkg::Lock::Timeout fait patienter apt au lieu d'echouer (apt >= 1.9.11).
+apt_install() {
+    exec_cmd "apt-get -o DPkg::Lock::Timeout=300 install -y $*"
+}
+
+# Arrete les passes APT d'arriere-plan (unattended-upgrades, apt-daily) : elles
+# prennent le verrou dpkg et n'ont aucune raison de tourner pendant le
+# durcissement (les mises a jour automatiques sont configurees juste apres).
+apt_stop_background() {
+    [ "$DRY_RUN" = "1" ] && return 0
+    systemctl stop unattended-upgrades.service >/dev/null 2>&1 || true
+    systemctl stop apt-daily.service apt-daily-upgrade.service >/dev/null 2>&1 || true
+    systemctl stop apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+    return 0
+}
+
 backup() {
     local f="$1"
     [ -e "$f" ] || return 0
@@ -154,6 +175,22 @@ fi
 block 1 "1. Modules noyau, core dumps, limites (CIS 1.1.1.x, 1.5.x, 3.x)"
 # =============================================================================
 ref "CIS Debian 13 1.1.1.x, 1.5.11-13, 3.2.x"
+
+# --- Photographie des parametres noyau AVANT toute modification ------------
+# Le de-hardening doit rendre au noyau ses valeurs d'origine, pas des
+# "valeurs par defaut" supposees : sur Debian 13, kernel.dmesg_restrict et
+# kernel.yama.ptrace_scope valent deja 1, donc les remettre a 0 degraderait
+# la posture par rapport a l'etat initial. On enregistre donc l'integralite
+# des parametres lisibles, que le de-hardening rejouera a l'identique.
+if [ "$DRY_RUN" != "1" ]; then
+    mkdir -p "$BACKUP_DIR"
+    sysctl -a 2>/dev/null | awk 'index($0, " = ") > 0 {
+        i = index($0, " = ");
+        print substr($0, 1, i - 1) "=" substr($0, i + 3)
+    }' > "$BACKUP_DIR/sysctl.before"
+    log "SNAPSHOT: $BACKUP_DIR/sysctl.before ($(wc -l < "$BACKUP_DIR/sysctl.before") parametres noyau)"
+fi
+
 MOD_BLACKLIST=/etc/modprobe.d/99-pve-hardening.conf
 write_file "$MOD_BLACKLIST" 0644 "\
 # Genere par apply-homesec-core.sh - CIS Debian 13 1.1.1.x et 3.2.x
@@ -432,6 +469,10 @@ exec_cmd "systemctl restart ssh"
 # =============================================================================
 block 1 "6. PAM : faillock + pwquality (CIS 5.3.3.1, 5.4.1, 5.4.2)"
 ref "CIS Debian 13 5.3.3.1.x / 5.4.1.x / 5.4.2.x + guide PVE 9"
+# Les passes APT automatiques (apt-daily / unattended-upgrades d'une execution
+# precedente) tiennent le verrou dpkg : on les arrete avant la premiere
+# installation de paquets.
+apt_stop_background
 # --- DNS joignable via le NAT VirtualBox -------------------------------------
 # Le DHCP fournit le DNS du reseau corporate de l'hote, qui n'est PAS route
 # par le NAT VirtualBox : sans resolution de nom, `apt-get update` echoue
@@ -480,11 +521,11 @@ if [ "$DRY_RUN" != "1" ]; then
     fi
 fi
 
-exec_cmd "apt-get install -y sudo chrony"
+apt_install sudo chrony
 if [ "$DRY_RUN" != "1" ] && command -v chronyd >/dev/null 2>&1; then
     exec_cmd "systemctl enable --now chrony" || exec_cmd "systemctl enable --now chronyd"
 fi
-exec_cmd "apt-get install -y libpam-modules libpam-pwquality"
+apt_install libpam-modules libpam-pwquality
 
 # --- CIS 5.3.3.1 : verrouillage de compte apres echecs d'authentification
 # Le CIS exige les arguments deny= / unlock_time= DANS la ligne PAM
@@ -627,7 +668,12 @@ exec_cmd "chmod 0700 /root"
 block 1 "7. Mises a jour de securite automatiques (guide 1.1.3)"
 # =============================================================================
 ref "Guide PVE 9 § 1.1.3 Configure Automatic Security Updates"
-exec_cmd "apt-get install -y unattended-upgrades apt-listchanges"
+apt_install unattended-upgrades apt-listchanges
+# La pose du paquet demarre aussitot une passe APT qui verrouille dpkg : on
+# l'arrete immediatement, sinon les sections 8 a 14 (fail2ban, auditd,
+# apparmor-utils, rkhunter, aide) echouent sur le verrou. Le service sera
+# re-active explicitement plus bas (systemctl enable).
+apt_stop_background
 write_file /etc/apt/apt.conf.d/20auto-upgrades 0644 "\
 APT::Periodic::Update-Package-Lists \"1\";
 APT::Periodic::Unattended-Upgrade \"1\";
@@ -645,7 +691,14 @@ Unattended-Upgrade::Remove-Unused-Dependencies "true";
 Unattended-Upgrade::Automatic-Reboot "false";
 EOF
 fi
+# unmask : un de-hardening anterieur peut avoir laisse l'unite masquee
+# (/etc/systemd/system/unattended-upgrades.service -> /dev/null), ce qui fait
+# echouer 'systemctl enable' et donc tout le bloc 7.
+exec_cmd "systemctl unmask unattended-upgrades"
 exec_cmd "systemctl enable unattended-upgrades"
+# Les minuteries arretees plus haut sont reactivees : ce sont elles qui
+# declenchent reellement les mises a jour de securite automatiques.
+exec_cmd "systemctl start apt-daily.timer apt-daily-upgrade.timer"
 
 # =============================================================================
 block 1 "8. Pare-feu PVE : activation et regles SSH/GUI (guide 1.2.4)"
@@ -675,7 +728,7 @@ exec_cmd "systemctl restart pve-firewall"
 block 1 "9. Fail2ban sur l'interface web Proxmox (guide 2.3.3)"
 # =============================================================================
 ref "Guide PVE 9 § 2.3.3 Protect the GUI with Fail2Ban"
-exec_cmd "apt-get install -y fail2ban"
+apt_install fail2ban
 # NB : 'port = https,http' fait echouer fail2ban (status=255) car
 # l'action nftables genere une regle 'dport { https,http }' invalide.
 # On declare donc un port par jail : fail2ban cree une action par port.
@@ -751,7 +804,7 @@ fi
 # --- CIS / ANSSI : AppArmor en mode enforce (plus de profil en complain)
 # apparmor-utils fournit aa-enforce/aa-status : sans lui, les profils
 # restent en mode complain et le controle OS.APPARMOR.ENFORCE echoue.
-exec_cmd "apt-get install -y apparmor-utils"
+apt_install apparmor-utils
 if [ "$DRY_RUN" != "1" ] && command -v aa-enforce >/dev/null 2>&1; then
     for prof in /etc/apparmor.d/*; do
         [ -f "$prof" ] || continue
@@ -788,7 +841,7 @@ block 1 "11b. Auditd : surveillance des modifications de /etc/pve (CIS 5.1.2)"
 ref "Guide PVE 9 § 5.1.2 Auditd for /etc/pve"
 # auditd doit etre INSTALLE (paquet) puis active : sans le paquet, le service
 # n'existe pas et le controle OS.AUDITD.ACTIVE echoue.
-exec_cmd "apt-get install -y auditd audispd-plugins"
+apt_install auditd audispd-plugins
 write_file /etc/audit/rules.d/90-pve.rules 0644 "\
 -w /etc/pve -p wa -k pve-config
 "
@@ -802,7 +855,7 @@ fi
 # --- 13. Detection de rootkit (CIS 5.3.2)
 block 1 "13. Detection de rootkit (CIS 5.3.2)"
 ref "Guide PVE 9 § 5.3.2 Rootkit Detection"
-exec_cmd "apt-get install -y rkhunter"
+apt_install rkhunter
 if [ "$DRY_RUN" != "1" ] && [ -f /etc/rkhunter.conf ]; then
     sed -i 's/^SCRIPTWHITELISTS=.*/SCRIPTWHITELISTS="rkhunter"/' /etc/rkhunter.conf
 fi
@@ -850,7 +903,7 @@ if [ "$LEVEL" -ge 3 ]; then
 # --- 15. AIDE integrite fichiers (ANSSI N2)
 block 3 "15. AIDE - verifie d'integrite des fichiers systeme"
 ref "ANSSI - Integrite des fichiers"
-exec_cmd "apt-get install -y aide aide-common"
+apt_install aide aide-common
 if [ "$DRY_RUN" != "1" ] && command -v aideinit >/dev/null 2>&1; then
     rm -f /var/lib/aide/aide.db /var/lib/aide/aide.db.new
     yes | timeout 300 aideinit >/dev/null 2>&1 || true
