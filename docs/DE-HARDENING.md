@@ -156,6 +156,10 @@ durcissement pre-existait : il est alors restaure et non supprime.
   desinstalles (difference entre la liste `packages.before` deposee avant le
   durcissement et la liste actuelle). Les paquets systeme critiques
   (`libpam-modules`, `openssh-server`, `systemd`...) ne sont jamais touches.
+  La desinstallation utilise `apt-get purge` : `remove` conserverait les
+  *conffiles modifies* par le durcissement (`20auto-upgrades` de
+  `unattended-upgrades`, `audit.rules` de `auditd`...), qui resteraient actifs
+  alors que le paquet n'existait pas a l'origine ;
 
 ### 5. Reversion de l'etat d'execution
 
@@ -170,7 +174,10 @@ explicitement :
   `kernel.dmesg_restrict` et `kernel.yama.ptrace_scope` valent deja `1`, donc
   les remettre a `0` degraderait la posture par rapport a l'etat d'origine ;
 - **AppArmor** : les profils sont repasses en mode *complain*
-  (`aa-complain`), c'est-a-dire non bloquants ;
+  (`aa-complain`), c'est-a-dire non bloquants. Cette etape est executee
+  **avant** la desinstallation des paquets : `aa-complain` appartient a
+  `apparmor-utils`, que le durcissement a installe — lancee apres, elle ne
+  ferait rien et laisserait les profils en *enforce* ;
 - **montages** : `/tmp`, `/var/tmp` et `/dev/shm` sont remontes sans les
   options `nosuid`/`nodev`/`noexec` ajoutees par le durcissement ;
 - **AIDE** : la base construite par le durcissement est supprimee ;

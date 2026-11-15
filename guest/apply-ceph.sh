@@ -35,6 +35,22 @@ if [ -f "$CONF" ]; then
     log "Sauvegarde : $CONF.bak-$TS"
 fi
 
+# --- Permissions d'origine --------------------------------------------------
+# Le de-hardening restaure les fichiers "<nom>.mode" trouves sous
+# /root/hardening-backups (format : "<mode> <proprietaire> <groupe>").
+# Sans cet enregistrement, le chmod 0750 sur /etc/ceph resterait applique
+# apres le de-hardening et l'etat d'origine ne serait pas retrouve.
+BK="/root/hardening-backups/$TS"
+record_mode() {
+    local p="$1"
+    [ -e "$p" ] || return 0
+    [ "$DRY_RUN" = "1" ] && return 0
+    mkdir -p "$BK$(dirname "$p")"
+    printf '%s %s %s\n' "$(stat -c %a "$p")" "$(stat -c %U "$p")" "$(stat -c %G "$p")" \
+        > "$BK$(dirname "$p")/$(basename "$p").mode"
+}
+record_mode /etc/ceph
+
 # --- Permissions de /etc/ceph ----------------------------------------------
 step "1. Permissions du repertoire /etc/ceph"
 run "chmod 0750 /etc/ceph"
@@ -43,6 +59,7 @@ run "chmod 0750 /etc/ceph"
 step "2. Permissions des keyrings (secrets Ceph)"
 for kr in /etc/ceph/*.keyring /etc/pve/priv/*.keyring; do
     [ -f "$kr" ] || continue
+    record_mode "$kr"
     run "chmod 0600 $kr"
 done
 

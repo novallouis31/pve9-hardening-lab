@@ -191,8 +191,13 @@ for root in "$BACKUP_ROOT" "$ANS_BACKUP_ROOT"; do
         [ -d "$ts_dir" ] || continue
         ts=$(basename "$ts_dir")
         if [ ! -f "$ts_dir/created.list" ] && [ ! -f "$ts_dir/modified.list" ] && [ ! -f "$ts_dir/packages.before" ]; then
-            log "  session ignoree (ancienne) : $root/$ts"
-            continue
+            # Une session peut ne contenir que des permissions (".mode") :
+            # c'est le cas du module Ceph, qui ne change que le mode de
+            # /etc/ceph. Elle doit donc etre conservee.
+            if [ -z "$(find "$ts_dir" -type f -name '*.mode' -print -quit 2>/dev/null)" ]; then
+                log "  session ignoree (ancienne) : $root/$ts"
+                continue
+            fi
         fi
         FOUND_ROOT=1
         find "$ts_dir" -type f 2>/dev/null | while IFS= read -r saved; do
@@ -497,6 +502,26 @@ for f in /etc/apt/sources.list.d/pve-enterprise.sources.disabled \
 done
 
 # ---------------------------------------------------------------------------
+step "5b. AppArmor : profils repasses en mode complain"
+# Cette etape doit preceder la desinstallation des paquets : aa-complain
+# appartient a apparmor-utils, que le durcissement a installe. Executee apres
+# la section 6, elle ne faisait rien (commande absente) et laissait tous les
+# profils en mode enforce, alors que l'etat d'origine etait complain.
+if command -v aa-complain >/dev/null 2>&1; then
+    APP_REVERTED=0
+    for prof in /etc/apparmor.d/*; do
+        [ -f "$prof" ] || continue
+        case "$(basename "$prof")" in abstractions|templates|user*) continue ;; esac
+        if runsh "aa-complain '$prof' 2>/dev/null || true"; then
+            APP_REVERTED=$((APP_REVERTED + 1))
+        fi
+    done
+    log "  profils AppArmor repasses en complain : $APP_REVERTED"
+else
+    log "  aa-complain absent : profils AppArmor laisses en l'etat"
+fi
+
+# ---------------------------------------------------------------------------
 step "6. Paquets installes par le durcissement"
 # Liste de reference : etat des paquets AVANT le premier durcissement.
 PKG_REF=""
@@ -537,7 +562,12 @@ else
                 continue
             fi
             log "    suppression du paquet $p"
-            runsh "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 remove -y '$p' >/dev/null 2>&1"
+            # purge et non remove : 'remove' conserve les conffiles MODIFIES
+            # par le durcissement (20auto-upgrades de unattended-upgrades,
+            # audit.rules de auditd, ...). Ces fichiers resteraient actifs
+            # apres le de-hardening et maintiendraient des reglages durcis
+            # alors que le paquet n'existait pas a l'origine.
+            runsh "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 purge -y '$p' >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 remove -y '$p' >/dev/null 2>&1"
             if [ "$DRY_RUN" = "1" ]; then
                 PACKAGES_REMOVED="$PACKAGES_REMOVED $p"
             elif dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "^install ok installed$"; then
@@ -556,7 +586,7 @@ else
             [ "$protected" = "1" ] && continue
             if dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "^install ok installed$"; then
                 log "    suppression du paquet $p"
-                runsh "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 remove -y '$p' >/dev/null 2>&1"
+                runsh "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 purge -y '$p' >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 remove -y '$p' >/dev/null 2>&1"
                 if [ "$DRY_RUN" = "1" ]; then
                     PACKAGES_REMOVED="$PACKAGES_REMOVED $p"
                 elif dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "^install ok installed$"; then
@@ -624,16 +654,6 @@ else
         "net.core.bpf_jit_harden=0" \
         "kernel.kptr_restrict=0"; do
         runsh "sysctl -w '$kv' 2>/dev/null || true"
-    done
-fi
-
-# AppArmor : repasser les profils en mode complain (non bloquant)
-if command -v aa-complain >/dev/null 2>&1; then
-    log "  profils AppArmor repasses en mode complain"
-    for prof in /etc/apparmor.d/*; do
-        [ -f "$prof" ] || continue
-        case "$(basename "$prof")" in abstractions|templates|user*) continue ;; esac
-        runsh "aa-complain '$prof' 2>/dev/null || true"
     done
 fi
 
