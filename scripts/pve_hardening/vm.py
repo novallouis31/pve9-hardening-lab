@@ -100,6 +100,17 @@ def prepare_vm(
         vbox("modifyvm", vm_name, flag)
     console.ok("  [ok] pae/long-mode/hwvirtex/nested-paging = on")
 
+    # ------------------------------------------------------------ stabilite VM
+    # Un noeud PVE est une machine headless : l'audio emule (AC'97) provoque des
+    # blocages du thread audio sur hote Windows, qui se traduisent par une
+    # derive d'horloge de l'invite puis un reset ACPI declenche par le watchdog
+    # VirtualBox ("Guest seems to be unresponsive"). On le desactive, ainsi que
+    # l'affichage distant, et on force l'horloge paravirtualisee KVM qui garde
+    # l'heure stable pendant les phases longues (apt, update-initramfs).
+    for flag in ("--audio=none", "--vrde=off", "--paravirt-provider=kvm"):
+        vbox("modifyvm", vm_name, flag)
+    console.ok("  [ok] audio=none vrde=off paravirt=kvm (stabilite horloge)")
+
     # --------------------------------------------------------------- firmware
     vbox("modifyvm", vm_name, "--firmware={}".format(firmware))
     vbox("modifyvm", vm_name, "--boot1=dvd")

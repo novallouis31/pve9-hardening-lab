@@ -245,3 +245,5 @@ suites `func-*` correspondantes) : aucun chiffre n'est ecrit en dur.
 | SSH coupe apres le de-hardening | `sshd -t` invalide | le script ne recharge pas le service dans ce cas ; corriger `/etc/ssh/sshd_config` puis `systemctl reload ssh` |
 | les paquets ne sont pas desinstalles | conflit de dependances | utiliser `--keep-packages` : le de-hardening n'a pas a les retirer |
 | un module noyau reste bloque | `update-initramfs` a echoue | `update-initramfs -u -v` puis redemarrer |
+| VM `aborted` pendant une chaine longue | derive d'horloge de l'invite (snapshot ancien) ou audio emule sur hote Windows | `VBoxManage modifyvm <vm> --audio=none --paravirt-provider=kvm`, puis resynchroniser l'horloge (`date -s`, `hwclock --systohc`) avant de relancer |
+| `Guest seems to be unresponsive` dans `VBox.log` | l'hote a affame la VM (I/O lourdes, autre tache) | relancer la chaine sans travail parallele ; verifier `TM: catch-up` |
