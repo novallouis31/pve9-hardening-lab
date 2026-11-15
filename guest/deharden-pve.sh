@@ -145,6 +145,9 @@ CREATED_FILES="
 # durcissement (fichier "packages.before" depose par les scripts). La liste
 # ci-dessous n'est qu'un repli.
 PACKAGES="aide aide-common apparmor-utils rsyslog auditd audispd-plugins fail2ban rkhunter unattended-upgrades apt-listchanges libpam-pwquality libpam-modules sudo chrony"
+#: Paquets effectivement desinstalles (ou a desinstaller en simulation) :
+#: sert au rapport, qui doit refleter le delta reel et non la liste par defaut.
+PACKAGES_REMOVED=""
 
 # Paquets jamais desinstalles : les retirer casserait PAM ou SSH.
 PROTECTED_PACKAGES="libpam-modules libpam-runtime libpam0g openssh-server openssh-client systemd apt dpkg bash coreutils util-linux libc6 dbus passwd login adduser procps iproute2 pve-manager pve-cluster pveproxy pvedaemon pvestatd"
@@ -624,11 +627,35 @@ done
 
 echo "" | tee -a "$LOG"
 echo "--- de-hardening ---" | tee -a "$LOG"
-for f in /etc/modprobe.d/99-pve-hardening.conf /etc/ssh/sshd_config.d/00-pve-hardening.conf; do
-    if [ -e "$f" ]; then
-        echo "    ATTENTION : $f est toujours present" | tee -a "$LOG"
+if [ "$DRY_RUN" = "1" ]; then
+    echo "    simulation : rien n'a ete ecrit, verification sur disque ignoree" | tee -a "$LOG"
+else
+    residuel=0
+    for f in \
+        /etc/modprobe.d/99-pve-hardening.conf \
+        /etc/modprobe.d/99-anssi-usb.conf \
+        /etc/sysctl.d/97-pve-hardening.conf \
+        /etc/sysctl.d/98-anssi.conf \
+        /etc/sysctl.d/99-pve-hardening.conf \
+        /etc/ssh/sshd_config.d/00-pve-hardening.conf \
+        /etc/profile.d/99-pve-hardening.sh \
+        /etc/security/limits.d/99-pve-hardening.conf \
+        /etc/systemd/journald.conf.d/99-pve-hardening.conf \
+        /etc/audit/rules.d/90-pve.rules; do
+        if [ -e "$f" ]; then
+            echo "    ATTENTION : $f est toujours present" | tee -a "$LOG"
+            residuel=$((residuel + 1))
+        fi
+    done
+    if [ "$residuel" -eq 0 ]; then
+        echo "    aucun fichier de durcissement ne subsiste" | tee -a "$LOG"
     fi
-done
+    for s in ssh pveproxy pvedaemon pvestatd; do
+        if ! systemctl is-active --quiet "$s" 2>/dev/null; then
+            echo "    ATTENTION : service $s inactif" | tee -a "$LOG"
+        fi
+    done
+fi
 
 # ---------------------------------------------------------------------------
 step "Rapport"

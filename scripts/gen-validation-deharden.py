@@ -97,24 +97,33 @@ def find_step(art: pathlib.Path, prefix: str):
 
 def parse_deharden_report(path: pathlib.Path) -> dict:
     """Extrait les metriques du rapport Markdown produit sur le noeud."""
-    metrics = {"index": None, "created": None, "modified": None,
-               "since": None, "packages": None, "restored": None, "deleted": None}
+    metrics = {"mode": None, "safety": None, "restored": 0,
+               "deleted": 0, "packages": 0}
     if not path.exists():
         return metrics
     body = path.read_text(encoding="utf-8", errors="replace")
-    patterns = {
-        "index": r"index : (\d+) sauvegarde",
-        "created": r"manifestes de creation : (\d+)",
-        "modified": r"manifestes de modification : (\d+)",
-        "since": r"debut du durcissement .*?: (\d{8}_\d{6})",
-        "packages": r"(\d+) paquet",
-    }
-    for key, pattern in patterns.items():
-        match = re.search(pattern, body)
-        if match:
-            metrics[key] = match.group(1)
-    metrics["restored"] = len(re.findall(r"^\[[^\]]+\]\s+restauration : ", body, re.M))
-    metrics["deleted"] = len(re.findall(r"^\[[^\]]+\]\s+suppression", body, re.M))
+
+    match = re.search(r"\*\*Mode\*\* : (.+)", body)
+    if match:
+        metrics["mode"] = match.group(1).strip()
+    match = re.search(r"\*\*Sauvegarde de securite\*\* : `([^`]+)`", body)
+    if match:
+        metrics["safety"] = match.group(1)
+
+    def section_rows(title: str) -> int:
+        """Nombre de lignes de tableau dans une section de niveau 2."""
+        block = re.search(
+            r"^## {}\s*$(.*?)(?=^## |\Z)".format(re.escape(title)),
+            body, re.M | re.S)
+        if not block:
+            return 0
+        return len(re.findall(r"^\| `", block.group(1), re.M))
+
+    metrics["restored"] = section_rows("Fichiers restaures")
+    metrics["deleted"] = section_rows("Fichiers supprimes")
+    match = re.search(r"Desinstalles : `([^`]*)`", body)
+    if match and match.group(1).strip():
+        metrics["packages"] = len(match.group(1).split())
     return metrics
 
 
@@ -593,22 +602,16 @@ def main() -> int:
     L.append("| SSH | restaure en dernier, `sshd -t` avant tout rechargement |")
     L.append("")
 
-    if metrics["index"]:
+    if metrics["safety"]:
         L.append("### Metriques relevees sur le noeud")
         L.append("")
         L.append("| Mesure | Valeur |")
         L.append("|---|---|")
-        L.append("| Sessions de sauvegarde indexees | {} fichiers |".format(metrics["index"]))
-        if metrics["created"] is not None:
-            L.append("| Manifestes de creation | {} |".format(metrics["created"]))
-        if metrics["modified"] is not None:
-            L.append("| Manifestes de modification | {} |".format(metrics["modified"]))
-        if metrics["since"]:
-            L.append("| Session de durcissement d'origine | `{}` |".format(metrics["since"]))
-        if metrics["restored"]:
-            L.append("| Fichiers restaures | {} |".format(metrics["restored"]))
-        if metrics["deleted"]:
-            L.append("| Fichiers supprimes | {} |".format(metrics["deleted"]))
+        L.append("| Mode d'execution | {} |".format(metrics["mode"]))
+        L.append("| Fichiers restaures | {} |".format(metrics["restored"]))
+        L.append("| Fichiers supprimes | {} |".format(metrics["deleted"]))
+        L.append("| Paquets desinstalles | {} |".format(metrics["packages"]))
+        L.append("| Sauvegarde de securite | `{}` |".format(metrics["safety"]))
         L.append("")
 
     report_applied = art / "deharden-applique.md"
