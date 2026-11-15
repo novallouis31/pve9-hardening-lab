@@ -105,9 +105,23 @@ modifie que les permissions (`/boot`, `/etc/cron.*`, `/etc/passwd`...) :
 ### 3. Suppression des fichiers crees
 
 Les fichiers qui n'existaient pas avant le durcissement sont supprimes. La
-liste est derivee des scripts de durcissement ; un fichier de cette liste
-qui possede une sauvegarde **anterieure** au durcissement pre-existait : il
-est alors restaure et non supprime.
+liste est derivee des **manifestes** que le durcissement depose dans chaque
+session de sauvegarde :
+
+| Fichier de session | Contenu |
+|---|---|
+| `created.list` | chemins **crees** par le durcissement (a supprimer) |
+| `modified.list` | chemins **modifies** (a restaurer) |
+| `packages.before` | paquets installes avant le durcissement (reference du delta) |
+
+Une seule session est prise en compte par racine de sauvegarde : la plus
+**ancienne** qui contient un manifeste. Les sessions heritees (anterieures a
+cette version, sans manifeste) sont ignorees, car leurs sauvegardes peuvent
+correspondre a un etat deja durci. Si aucun manifeste n'existe, le script
+retombe sur la liste codee en dur ci-dessous.
+
+Un fichier de cette liste qui possede une sauvegarde **anterieure** au
+durcissement pre-existait : il est alors restaure et non supprime.
 
 ```
 /etc/modprobe.d/99-pve-hardening.conf      /etc/audit/rules.d/90-pve.rules
@@ -165,7 +179,7 @@ explicitement :
 > le gestionnaire de paquets restent operatifs immediatement apres le
 > de-hardening.
 
-### 5. Securite de l'operation
+### 6. Securite de l'operation
 
 - la configuration SSH est restauree **en dernier**, et le service n'est
   recharge qu'apres verification par `sshd -t` : une configuration invalide
@@ -204,8 +218,20 @@ python3 scripts/pve.py run --phase verify --ssh-host 192.168.1.50 --run-func
 
 La chaine complete (baseline -> durcissement -> de-hardening -> re-durcissement)
 a ete executee sur une VM Proxmox VE reelle. Le rapport detaille (statuts
-par controle, comparaison baseline/estado restaure, tests fonctionnels) est
-dans [reports/rapport-validation-deharden.md](../reports/rapport-validation-deharden.md).
+par controle, comparaison baseline / etat restaure, tests fonctionnels) est
+dans [reports/rapport-validation-deharden.md](../reports/rapport-validation-deharden.md)
+et son equivalent PDF.
+
+Le rapport est **regenere a partir des artefacts** de la derniere chaine :
+
+```bash
+python3 scripts/gen-validation-deharden.py .            # Markdown
+python3 scripts/gen-validation-deharden.py . --pdf      # Markdown + PDF
+```
+
+Le generateur selectionne le repertoire le plus recent de chaque etape
+(`artifacts/baseline-*`, `hardened-*`, `dehardened-*`, `rehardened-*` et les
+suites `func-*` correspondantes) : aucun chiffre n'est ecrit en dur.
 
 ## Depannage
 

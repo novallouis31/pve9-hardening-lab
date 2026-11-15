@@ -150,6 +150,7 @@ pve9-hardening-lab/
 |   |-- pve_hardening/       paquet Python (phases, rapports, SSH, PDF, VirtualBox)
 |   |-- ssh-tool.py          wrapper SSH/SFTP (paramiko) : test|exec|put|get
 |   |-- ssh-exec.py          execution d'une commande distante (usage unique)
+|   |-- deharden.sh          client bash de de-hardening (IP + mot de passe / cle)
 |-- guest/
 |   |-- audit-pve.sh         collecteur PVE/CIS de base, LECTURE SEULE
 |   |-- audit-cis13.sh       controles CIS Debian 13 officiels (IDs CIS)
@@ -161,19 +162,36 @@ pve9-hardening-lab/
 |   |-- apply-homesec-core.sh durcissement CIS niveau 1 a 4
 |   |-- apply-anssi.sh       durcissement ANSSI niveau 1 a 4
 |   |-- apply-ceph.sh        durcissement Ceph
+|   |-- deharden-pve.sh      de-hardening executed sur le noeud (restauration)
 |   |-- reset-pristine.sh    retour a l'etat propre
 |   |-- bootstrap-sshkey.sh  installe la cle publique du lab
 |-- vendor/                  artefacts des projets (generes par `pve.py fetch-vendor`)
 |-- answers/mrmasterbay.txt  reponses pour l'assistant interactif archive
-|-- reports/                 rapports PDF par guide + README
+|-- reports/                 rapports PDF par guide + rapport de validation
 |-- docs/PLAN-DE-TEST.md     protocole complet
+|-- docs/DE-HARDENING.md     de-hardening : restauration, upgrade, depannage
 |-- docs/CHOIX-PROJET.md     analyse comparative des projets GitHub
 |-- docs/LINUX.md            utilisation sous Linux (Ubuntu, SLES, RHEL)
 |-- docs/DEPLOIEMENT-AUTOMATIQUE.md  creation de la VM PVE sans intervention
 |-- docs/GITKRAKEN.md        utilisation de GitKraken (PAT, push, PR, conflits)
 ```
 
-## Publier le depot avec GitKraken
+## Depot public
+
+Le projet est publie sur GitHub :
+
+- code et documentation : <https://github.com/novallouis31/pve9-hardening-lab>
+- atelier de jeux voisin (depot distinct) : <https://github.com/novallouis31/petit-atelier-de-jeux>
+
+```bash
+git clone https://github.com/novallouis31/pve9-hardening-lab.git
+```
+
+Les secrets et les artefacts de mesure ne sont pas versionnes (`.keys/`,
+`artifacts/`, `vendor/`, `reports/*.html`). Les rapports livres sont dans
+`reports/` (`rapport-final-*.pdf`, `rapport-validation-deharden.pdf`).
+
+### Republier avec GitKraken
 
 ```bash
 # 1. enregistrer le Personal Access Token dans la CLI GitKraken

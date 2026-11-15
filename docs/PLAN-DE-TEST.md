@@ -240,12 +240,30 @@ python3 scripts/pve.py run --phase verify --audit-extra anssi,ceph,cis13,communa
 Sur un noeud **PVE 8**, l'etape 4 est suivie de la montee de version :
 
 ```bash
-# depot PVE 9 + mise a jour officielle, puis redemarrage
-bash scripts/upgrade-pve9.sh        # depot pve-no-subscription, dist-upgrade, pve8to9 check
+# 1. sauvegarde de reference
+tar czf /root/pre-upgrade-$(date +%Y%m%d).tar.gz /etc/pve /etc/network/interfaces
+
+# 2. bascule des depots sur PVE 9 (pve-no-subscription)
+sed -i 's/^deb .*pve.*$/deb http:\/\/download.proxmox.com\/debian\/pve bookworm pve-no-subscription/' \
+    /etc/apt/sources.list.d/pve-install-repo.list 2>/dev/null || true
+apt-get update
+
+# 3. verification officielle avant la montee de version
+pve8to9 --full
+
+# 4. montee de version
+apt-get dist-upgrade -y
 reboot
 ```
 
-Le rapport dedie est `reports/rapport-validation-deharden.md`.
+Apres redemarrage, verifier `pveversion` puis re-durcir (etape 6).
+
+Le rapport dedie est `reports/rapport-validation-deharden.md` (et son PDF),
+regenere depuis les artefacts :
+
+```bash
+python3 scripts/gen-validation-deharden.py . --pdf
+```
 
 ## Ce qui est intrinsequement hors portee dans ce lab
 

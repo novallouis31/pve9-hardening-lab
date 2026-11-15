@@ -5,8 +5,8 @@ script distant ``guest/deharden-pve.sh`` sur la cible, l'execute et recupere
 le rapport Markdown produit.
 
 Le client bash reste la reference pour les environnements sans Python ; les
-deuxCalling exploitent le MEME script distant, donc le comportement est
-identique.
+deux implementations exploitent le MEME script distant, donc le comportement
+est identique.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ def _local_script(options: DehardenOptions) -> Path:
 
 def deharden(options: DehardenOptions) -> int:
     """Execute le de-hardening sur la cible."""
-    console.step("De-hardencing de l'instance Proxmox")
+    console.step("De-hardening de l'instance Proxmox")
     console.write("  cible  : {}@{}:{}".format(options.user, options.host, options.port))
     console.write("  mode   : {}".format("simulation" if options.dry_run else "application"))
 
@@ -125,6 +125,7 @@ def deharden(options: DehardenOptions) -> int:
             re.sub(r"[^A-Za-z0-9_.-]", "_", options.host)
         )
         try:
+            Path(local_report).parent.mkdir(parents=True, exist_ok=True)
             ssh.get(remote_report, local_report)
             console.ok("  rapport local : {}".format(local_report))
         except SshError:

@@ -205,6 +205,7 @@ RC=$?
 # --- 5. recuperer le rapport ---------------------------------------------
 echo ""
 echo "--- 5. rapport ---"
+mkdir -p "$(dirname "$REPORT")" 2>/dev/null || true
 if "${SCP_CMD[@]}" "${USER_NAME}@${HOST}:${REMOTE_REPORT}" "$REPORT" 2>/dev/null; then
     echo "  rapport local : $REPORT"
 else
