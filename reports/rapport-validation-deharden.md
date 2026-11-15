@@ -2,101 +2,67 @@
 
 Ce rapport rend compte de la validation du script de **de-hardening** (retour a l'etat anterieur au durcissement) sur une instance Proxmox VE reelle. La chaine complete a ete executee sur la VM de laboratoire : audit de reference, durcissement, de-hardening par le client bash, audit de l'etat restaure, re-durcissement et audit final.
 
-- **Genere le** : 2026-11-14 23:12:48
+- **Genere le** : 2026-11-15 08:44:32
 - **Perimetre couvert** : 161 controles d'audit, 72 tests fonctionnels
 
 ## 1. Synthese
 
 | Etape | Artefacts | PASS | FAIL | NA | INFO | Conformite |
 |---|---|---:|---:|---:|---:|---:|
-| Baseline - PVE 9.2.2 pristine (avant durcissement) | `baseline-20261114-224131` | 125 | 17 | 10 | 9 | 88 % |
-| Apres durcissement (CIS L2 + ANSSI N3 + Ceph) | `hardened-20261114-224754` | 146 | 0 | 8 | 7 | 100 % |
-| Apres de-hardening | `dehardened-20261114-225052` | 110 | 33 | 10 | 8 | 76.9 % |
-| Apres re-durcissement | `rehardened-20261113-093342` | 132 | 11 | 9 | 9 | 92.3 % |
+| Baseline - PVE 9.2.2 pristine (avant durcissement) | `baseline-20261115-071728` | 68 | 72 | 11 | 10 | 48.6 % |
+| Apres durcissement (CIS L2 + ANSSI N3 + Ceph) | `hardened-20261115-072915` | 146 | 0 | 8 | 7 | 100 % |
+| Apres de-hardening | `dehardened-20261115-073218` | 91 | 50 | 10 | 10 | 64.5 % |
+| Apres re-durcissement | `rehardened-20261115-065848` | 146 | 0 | 8 | 7 | 100 % |
 
 ### Tests fonctionnels (non-regression Proxmox + OS)
 
 | Etape | Artefacts | Tests | PASS | FAIL |
 |---|---|---:|---:|---:|
-| Apres durcissement | `func-hardened-20261114-224755` | 72 | 71 | 0 |
-| Apres de-hardening | `func-dehardened-20261114-225053` | 72 | 66 | 1 |
-| Apres re-durcissement | `func-rehardened-20261113-093343` | 72 | 69 | 0 |
+| Baseline - PVE 9.2.2 pristine | `func-baseline-20261115-071729` | 72 | 62 | 1 |
+| Apres durcissement | `func-hardened-20261115-072916` | 72 | 71 | 0 |
+| Apres de-hardening | `func-dehardened-20261115-073219` | 72 | 65 | 1 |
+| Apres re-durcissement | `func-rehardened-20261115-065849` | 72 | 71 | 0 |
 
 ## 2. Retour a l'etat d'origine (resultat principal)
 
-43 controle(s) sur 161 presentent un statut different de la baseline :
+25 controle(s) sur 161 presentent un statut different de la baseline :
 
 | Controle | Baseline | Apres de-hardening | Ecart |
 |---|---|---|---|
 | `ANS.AIDE.DB` | FAIL | PASS | ecart |
 | `ANS.APPARMOR.ENFORCE` | FAIL | PASS | ecart |
-| `ANS.BOOT.PERM` | PASS | FAIL | ecart |
-| `ANS.CRON.ALLOW` | FAIL | PASS | ecart |
-| `ANS.LOGIN.UMASK` | PASS | FAIL | ecart |
-| `ANS.PASSWORD.AGING` | PASS | FAIL | ecart |
-| `ANS.RSYSLOG.REMOTE` | FAIL | PASS | ecart |
-| `ANS.SESSION.TMOUT` | FAIL | PASS | ecart |
-| `ANS.USBSTORAGE` | FAIL | PASS | ecart |
+| `ANS.BANNER` | PASS | FAIL | ecart |
+| `ANS.CTRLALTDEL` | FAIL | PASS | ecart |
+| `ANS.KERNEL.BPF` | FAIL | PASS | ecart |
+| `ANS.KERNEL.JIT` | FAIL | PASS | ecart |
+| `ANS.KERNEL.KPTR` | FAIL | PASS | ecart |
 | `CEPH.AUTH.CEPHX` | FAIL | PASS | ecart |
 | `CEPH.CONF` | FAIL | PASS | ecart |
 | `CEPH.CONF.PERM` | FAIL | PASS | ecart |
 | `CEPH.MSGR2` | FAIL | PASS | ecart |
 | `CEPH.OSD.ENCRYPT` | NA | PASS | ecart |
-| `CIS.4.1.2.1` | INFO | PASS | ecart |
-| `CIS.5.3.3.1.1` | PASS | FAIL | ecart |
-| `CIS.5.3.3.1.2` | PASS | FAIL | ecart |
-| `CIS.5.3.3.1.3` | PASS | FAIL | ecart |
-| `CIS.5.4.1.1` | PASS | FAIL | ecart |
-| `CIS.5.4.1.2` | PASS | NA | ecart |
-| `CIS.5.4.1.3` | PASS | FAIL | ecart |
-| `CIS.5.4.1.4` | PASS | FAIL | ecart |
-| `CIS.5.4.2.1` | PASS | FAIL | ecart |
-| `CIS.5.4.2.2` | PASS | FAIL | ecart |
-| `CIS.5.4.3.1` | PASS | FAIL | ecart |
+| `COMM.CTRLALTDEL` | FAIL | PASS | ecart |
+| `COMM.SYSCTL.KERNEL_KPTR_RESTRICT` | FAIL | PASS | ecart |
+| `COMM.SYSCTL.NET_IPV4_CONF_ALL_ACCEPT_REDIRECTS` | FAIL | PASS | ecart |
+| `COMM.SYSCTL.NET_IPV4_CONF_ALL_SEND_REDIRECTS` | FAIL | PASS | ecart |
+| `COMM.SYSCTL.NET_IPV4_CONF_DEFAULT_ACCEPT_REDIRECTS` | FAIL | PASS | ecart |
+| `COMM.SYSCTL.NET_IPV4_CONF_DEFAULT_SEND_REDIRECTS` | FAIL | PASS | ecart |
+| `COMM.SYSCTL.NET_IPV6_CONF_ALL_ACCEPT_RA` | FAIL | PASS | ecart |
+| `COMM.SYSCTL.NET_IPV6_CONF_ALL_ACCEPT_REDIRECTS` | FAIL | PASS | ecart |
 | `OS.APPARMOR.ENFORCE` | FAIL | PASS | ecart |
 | `OS.AUDITD.PVE` | FAIL | PASS | ecart |
-| `OS.CRON.CRONTAB` | PASS | FAIL | ecart |
-| `OS.CRON.DIR.cron.d` | PASS | FAIL | ecart |
-| `OS.CRON.DIR.cron.daily` | PASS | FAIL | ecart |
-| `OS.CRON.DIR.cron.hourly` | PASS | FAIL | ecart |
-| `OS.CRON.DIR.cron.monthly` | PASS | FAIL | ecart |
-| `OS.CRON.DIR.cron.weekly` | PASS | FAIL | ecart |
-| `OS.PAM.FAILLOCK` | PASS | FAIL | ecart |
-| `OS.PAM.FAILLOCK.POLICY` | PASS | FAIL | ecart |
-| `OS.PAM.MINLEN` | PASS | FAIL | ecart |
-| `OS.PAM.PWQUALITY` | PASS | FAIL | ecart |
-| `OS.SSHD.PERM.sshd_config` | PASS | FAIL | ecart |
-| `OS.SSHD.PERM.sshd_config.d` | PASS | FAIL | ecart |
-| `OS.UNATTENDED.PKG` | PASS | FAIL | ecart |
-| `PVE.F2B.GUI` | PASS | FAIL | ecart |
-| `PVE.F2B.PKG` | PASS | FAIL | ecart |
-| `PVE.FW.CLUSTER` | PASS | FAIL | ecart |
+| `OS.MOUNT._dev_shm` | FAIL | PASS | ecart |
+| `OS.MOUNT._var_tmp` | FAIL | PASS | ecart |
+| `OS.UNATTENDED.ENABLED` | FAIL | PASS | ecart |
 
 - La baseline correspond au systeme **avant tout durcissement** (instantane VirtualBox `pristine`, Proxmox VE 9.2.2 / Debian 13).
-- Conformite : 88 % a la baseline, 76.9 % apres de-hardening.
+- Conformite : 48.6 % a la baseline, 64.5 % apres de-hardening.
 
 ## 3. Re-durcissement : la reference est retrouvee
 
-14 controle(s) different(s) de la reference durcie :
+**Les 161 controles presentent un statut identique a celui de la premiere application du durcissement.** Le durcissement est donc reproductible et le de-hardening n'a laisse aucun artefact derangeant.
 
-| Controle | Apres durcissement | Apres re-durcissement |
-|---|---|---|
-| `ANS.AIDE.DB` | PASS | FAIL |
-| `ANS.AIDE.INSTALLED` | PASS | FAIL |
-| `ANS.CRON.ALLOW` | PASS | FAIL |
-| `ANS.RSYSLOG.ACTIVE` | PASS | FAIL |
-| `ANS.RSYSLOG.REMOTE` | PASS | FAIL |
-| `ANS.SESSION.TMOUT` | PASS | FAIL |
-| `ANS.USBSTORAGE` | PASS | FAIL |
-| `CEPH.AUTH.CEPHX` | PASS | FAIL |
-| `CEPH.CONF` | PASS | FAIL |
-| `CEPH.CONF.PERM` | PASS | FAIL |
-| `CEPH.MSGR2` | PASS | FAIL |
-| `CEPH.OSD.ENCRYPT` | PASS | NA |
-| `CIS.4.1.2.1` | PASS | INFO |
-| `OS.RSYSLOG` | PASS | INFO |
-
-- Conformite : 100 % apres durcissement, 92.3 % apres re-durcissement.
+- Conformite : 100 % apres durcissement, 100 % apres re-durcissement.
 
 ## 4. Ce que fait le de-hardening
 
@@ -118,37 +84,54 @@ Le script `guest/deharden-pve.sh` s'execute **sur le noeud** ; le client `script
 ```
 # De-hardening Proxmox VE
 
-- **Date** : 2026-11-14T22:50:27+01:00
+- **Date** : 2026-11-15T07:31:53+01:00
 - **Hote** : pve
 - **Mode** : application
-- **Journal** : `/var/log/deharden-20261114_224842.log`
-- **Sauvegarde de securite** : `/root/deharden-safety-20261114_224842`
+- **Journal** : `/var/log/deharden-20261115_073001.log`
+- **Sauvegarde de securite** : `/root/deharden-safety-20261115_073001`
 
 ## Fichiers restaures
 
 | Fichier |
 |---|
+| `/etc/apparmor.d/busybox` |
 | `/etc/apt/apt.conf.d/20auto-upgrades` |
 | `/etc/crontab` |
 | `/etc/fstab` |
-| `/etc/issue.net` |
 | `/etc/login.defs` |
 | `/etc/pam.d/common-auth` |
 | `/etc/pam.d/common-password` |
 | `/etc/pam.d/login` |
 | `/etc/pam.d/passwd` |
 | `/etc/pam.d/sshd` |
-| `/etc/profile.d/99-pve-hardening.sh` |
 | `/etc/security/faillock.conf` |
 | `/etc/security/pwquality.conf` |
 | `/etc/ssh/sshd_config` |
-| `/etc/ssh/sshd_config.d/00-pve-hardening.conf` |
 | `/root/.bashrc` |
 
 ## Fichiers supprimes
 
 | Fichier |
 |---|
+| `/etc/issue.net` |
+| `/etc/profile.d/99-pve-hardening.sh` |
+| `/etc/ssh/sshd_config.d/00-pve-hardening.conf` |
+| `/etc/modprobe.d/99-pve-hardening.conf` |
+| `/etc/modprobe.d/99-anssi-usb.conf` |
+| `/etc/sysctl.d/97-pve-hardening.conf` |
+| `/etc/sysctl.d/98-anssi.conf` |
+| `/etc/sysctl.d/99-pve-hardening.conf` |
+| `/etc/systemd/journald.conf.d/99-pve-hardening.conf` |
+| `/etc/security/limits.d/99-pve-hardening.conf` |
+| `/etc/profile.d/tmout.sh` |
+| `/etc/audit/rules.d/90-pve.rules` |
+| `/etc/fail2ban/filter.d/pveproxy.conf` |
+| `/etc/fail2ban/jail.d/pve-web.conf` |
+| `/etc/fail2ban/jail.d/pve-web-http.conf` |
+| `/etc/rsyslog.d/99-anssi-remote.conf` |
+| `/etc/cron.daily/aide-check` |
+| `/etc/cron.allow` |
+| `/root/rollback-hardening.sh` |
 | `/etc/pve/firewall/cluster.fw` |
 | `/etc/pve/nodes/pve/firewall` |
 
@@ -225,11 +208,12 @@ python3 scripts/pve.py run --phase verify --ssh-host <ip> --run-func
 
 | Prefixe | Contenu |
 |---|---|
-| `baseline-20261114-224131` | Baseline - PVE 9.2.2 pristine (avant durcissement) |
-| `hardened-20261114-224754` | Apres durcissement (CIS L2 + ANSSI N3 + Ceph) |
-| `dehardened-20261114-225052` | Apres de-hardening |
-| `rehardened-20261113-093342` | Apres re-durcissement |
-| `func-hardened-20261114-224755` | Apres durcissement |
-| `func-dehardened-20261114-225053` | Apres de-hardening |
-| `func-rehardened-20261113-093343` | Apres re-durcissement |
+| `baseline-20261115-071728` | Baseline - PVE 9.2.2 pristine (avant durcissement) |
+| `hardened-20261115-072915` | Apres durcissement (CIS L2 + ANSSI N3 + Ceph) |
+| `dehardened-20261115-073218` | Apres de-hardening |
+| `rehardened-20261115-065848` | Apres re-durcissement |
+| `func-baseline-20261115-071729` | Baseline - PVE 9.2.2 pristine |
+| `func-hardened-20261115-072916` | Apres durcissement |
+| `func-dehardened-20261115-073219` | Apres de-hardening |
+| `func-rehardened-20261115-065849` | Apres re-durcissement |
 

@@ -345,6 +345,32 @@ else
         DELETED="$DELETED$f
 "
     done
+    # Ceph : apply-ceph.sh cree /etc/ceph/ceph.conf et la sauvegarde en
+    # ".bak-<horodatage>". On restaure le plus ancien .bak ; sinon on supprime
+    # le fichier (et le repertoire s'il devient vide), car il n'existait pas
+    # dans l'etat d'origine.
+    if [ -e /etc/ceph/ceph.conf ]; then
+        oldest=""
+        for bak in $(ls -1t /etc/ceph/ceph.conf.bak-* 2>/dev/null); do
+            oldest="$bak"
+        done
+        if [ -n "$oldest" ] && [ -f "$oldest" ]; then
+            log "  restauration : /etc/ceph/ceph.conf  <- $oldest"
+            if [ "$DRY_RUN" != "1" ]; then
+                cp -a "$oldest" /etc/ceph/ceph.conf
+            fi
+            RESTORED="$RESTORED/etc/ceph/ceph.conf
+"
+        else
+            log "  suppression (cree par le durcissement) : /etc/ceph/ceph.conf"
+            if [ "$DRY_RUN" != "1" ]; then
+                rm -f /etc/ceph/ceph.conf
+                rmdir /etc/ceph 2>/dev/null || true
+            fi
+            DELETED="$DELETED/etc/ceph/ceph.conf
+"
+        fi
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -530,6 +556,56 @@ fi
 step "7. Reconstruction de l'initramfs et application des sysctl"
 runsh "update-initramfs -u"
 runsh "sysctl --system 2>/dev/null || true"
+
+# --- Reversion de l'etat d'execution ------------------------------------
+# Les valeurs appliquees a chaud par le durcissement persistent apres la
+# suppression de ses fichiers de configuration ; sysctl --system ne les
+# remet pas a zero (il ne charge que les valeurs declarees). On les ramene
+# donc explicitement aux valeurs par defaut du noyau/Debian.
+log "  reversion des sysctl durcis (valeurs par defaut)"
+for kv in \
+    "kernel.unprivileged_bpf_disabled=0" \
+    "net.core.bpf_jit_harden=0" \
+    "kernel.yama.ptrace_scope=0" \
+    "kernel.dmesg_restrict=0" \
+    "kernel.kptr_restrict=0" \
+    "net.ipv4.conf.all.accept_redirects=0" \
+    "net.ipv4.conf.default.accept_redirects=0" \
+    "net.ipv4.conf.all.send_redirects=1" \
+    "net.ipv4.conf.default.send_redirects=1" \
+    "net.ipv4.icmp_echo_ignore_broadcasts=1" \
+    "net.ipv6.conf.all.accept_redirects=0" \
+    "net.ipv6.conf.default.accept_redirects=0" \
+    "net.ipv6.conf.all.accept_ra=0" \
+    "net.ipv6.conf.default.accept_ra=0"; do
+    runsh "sysctl -w '$kv' 2>/dev/null || true"
+done
+
+# AppArmor : repasser les profils en mode complain (non bloquant)
+if command -v aa-complain >/dev/null 2>&1; then
+    log "  profils AppArmor repasses en mode complain"
+    for prof in /etc/apparmor.d/*; do
+        [ -f "$prof" ] || continue
+        case "$(basename "$prof")" in abstractions|templates|user*) continue ;; esac
+        runsh "aa-complain '$prof' 2>/dev/null || true"
+    done
+fi
+
+# Base AIDE construite par le durcissement
+if [ -d /var/lib/aide ]; then
+    log "  suppression de la base AIDE"
+    runsh "rm -f /var/lib/aide/aide.db /var/lib/aide/aide.db.new 2>/dev/null || true"
+fi
+
+# Montages : retirer les options ajoutees a chaud par le durcissement
+log "  remontage des points de montage temporaires (options d'origine)"
+runsh "mount -o remount,suid,dev,exec /tmp 2>/dev/null || true"
+runsh "mount -o remount,suid,dev,exec /var/tmp 2>/dev/null || true"
+runsh "mount -o remount,suid,dev,exec /dev/shm 2>/dev/null || true"
+
+# Services rendus actifs par le durcissement
+runsh "systemctl disable --now unattended-upgrades 2>/dev/null || true"
+runsh "systemctl mask unattended-upgrades 2>/dev/null || true"
 
 # ---------------------------------------------------------------------------
 step "8. Verification finale"
