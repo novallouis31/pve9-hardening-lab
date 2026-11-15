@@ -142,6 +142,29 @@ est alors restaure et non supprime.
   durcissement et la liste actuelle). Les paquets systeme critiques
   (`libpam-modules`, `openssh-server`, `systemd`...) ne sont jamais touches.
 
+### 5. Reversion de l'etat d'execution
+
+Les valeurs appliquees **a chaud** par le durcissement persistent apres la
+suppression de ses fichiers de configuration (`sysctl --system` ne remet pas
+a zero une valeur absente des fichiers). Le de-hardening les ramene donc
+explicitement :
+
+- **sysctl** : les valeurs ANSSI/CIS sont repassees aux valeurs par defaut du
+  noyau (`unprivileged_bpf_disabled`, `bpf_jit_harden`, `yama.ptrace_scope`,
+  `dmesg_restrict`, `kptr_restrict`, redirecteurs IPv4/IPv6, RA IPv6) ;
+- **AppArmor** : les profils sont repasses en mode *complain*
+  (`aa-complain`), c'est-a-dire non bloquants ;
+- **montages** : `/tmp`, `/var/tmp` et `/dev/shm` sont remontes sans les
+  options `nosuid`/`nodev`/`noexec` ajoutees par le durcissement ;
+- **AIDE** : la base construite par le durcissement est supprimee ;
+- **services** : `unattended-upgrades` est desactive et masque,
+  `ctrl-alt-del.target` est reactive.
+
+> Ces ecarts d'etat d'execution disparaissent apres un redemarrage. Ils ne
+> bloquent pas une montee de version : l'acces SSH, les services Proxmox et
+> le gestionnaire de paquets restent operatifs immediatement apres le
+> de-hardening.
+
 ### 5. Securite de l'operation
 
 - la configuration SSH est restauree **en dernier**, et le service n'est
