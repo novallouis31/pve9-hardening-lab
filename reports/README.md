@@ -24,6 +24,7 @@ Tests fonctionnels : `guest/func-test-pve.sh` (21 tests Proxmox) et
 | [rapport-Ceph.pdf](rapport-Ceph.pdf) | Ceph seul | 34 | 39 | +5 | 0 | 0 |
 | [rapport-validation-proxmox.pdf](rapport-validation-proxmox.pdf) | Validation croisee (VM `proxmox`) | 67 | **145** | **+78** | 0 | 0 |
 | [rapport-validation-proxmox3.pdf](rapport-validation-proxmox3.pdf) | Validation croisee (VM `proxmox3`) | 67 | **145** | **+78** | 0 | 0 |
+| [rapport-validation-deharden.md](rapport-validation-deharden.md) | **De-hardening** : baseline -> durcissement -> de-hardening -> re-durcissement (VM `proxmox`, chaine du 2026-11-15) | 68 | **145** | **+78** | 0 | 0 |
 
 ### Validation croisee (reproductibilite)
 

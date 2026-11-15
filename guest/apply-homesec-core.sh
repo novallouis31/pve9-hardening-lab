@@ -905,6 +905,13 @@ block 3 "15. AIDE - verifie d'integrite des fichiers systeme"
 ref "ANSSI - Integrite des fichiers"
 apt_install aide aide-common
 if [ "$DRY_RUN" != "1" ] && command -v aideinit >/dev/null 2>&1; then
+    # AIDE 0.19 exige une configuration valide (database_in / database_out) :
+    # sans /etc/aide/aide.conf exploitable, 'aide --init' echoue et la base
+    # reste absente (controle ANS.AIDE.DB en echec apres durcissement).
+    write_file /etc/aide/aide.conf 0644 "\
+database_in = file:/var/lib/aide/aide.db
+database_out = file:/var/lib/aide/aide.db.new
+"
     rm -f /var/lib/aide/aide.db /var/lib/aide/aide.db.new
     yes | timeout 300 aideinit >/dev/null 2>&1 || true
     yes | timeout 300 aide --init >/dev/null 2>&1 || true
