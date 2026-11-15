@@ -1,4 +1,4 @@
-﻿{
+{
     "vmName":  "proxmox",
     "memoryMB":  8192,
     "cpuCount":  4,

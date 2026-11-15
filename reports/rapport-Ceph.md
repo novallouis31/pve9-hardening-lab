@@ -1,4 +1,4 @@
-﻿# Comparatif de hardening - Proxmox VE 9
+# Comparatif de hardening - Proxmox VE 9
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261112-130357`
 - **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-130444`

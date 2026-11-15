@@ -3,7 +3,7 @@
 # audit-ceph.sh - Controles Ceph (configuration PVE 9 / guide HomeSecExplorer)
 # -----------------------------------------------------------------------------
 # References :
-#   - Guide PVE 9 Â§ 3.4 / 3.5 (OSD encryption, messenger in-flight encryption)
+#   - Guide PVE 9 § 3.4 / 3.5 (OSD encryption, messenger in-flight encryption)
 #   - Clefs de configuration Ceph (ms_bind_msgr2, ms_encrypt, ms_*_mode)
 #   - Documentation Ceph : cephx, keyring, dashboard, pool
 #
@@ -59,7 +59,7 @@ else
 fi
 
 # --- Chiffrement en transit (msgr2) ------------------------------------------
-# Guide PVE 9 Â§ 3.5 : ms_bind_msgr2 + ms_encrypt + modes secure
+# Guide PVE 9 § 3.5 : ms_bind_msgr2 + ms_encrypt + modes secure
 if [ -f "$CONF" ]; then
     miss=""
     grep -qE '^[[:space:]]*ms_bind_msgr2[[:space:]]*=[[:space:]]*true' "$CONF" || miss="$miss ms_bind_msgr2"
@@ -121,7 +121,7 @@ else
     chk "CEPH.DASHBOARD" NA "ceph-dashboard non installe (pas de cluster)"
 fi
 
-# --- Chiffrement des OSD (Guide Â§ 3.4) ---------------------------------------
+# --- Chiffrement des OSD (Guide § 3.4) ---------------------------------------
 if [ -f "$CONF" ]; then
     if grep -qE '^[[:space:]]*osd_encrypt[[:space:]]*=[[:space:]]*true' "$CONF" 2>/dev/null; then
         chk "CEPH.OSD.ENCRYPT" PASS "chiffrement des OSD declare"
@@ -132,7 +132,7 @@ else
     chk "CEPH.OSD.ENCRYPT" NA "ceph.conf absent"
 fi
 
-# --- Pools : replication et min_size (Guide Â§ 3.3) --------------------------
+# --- Pools : replication et min_size (Guide § 3.3) --------------------------
 if command -v ceph >/dev/null 2>&1 && ceph status >/dev/null 2>&1; then
     pools=$(ceph osd pool ls detail 2>/dev/null | grep -c 'size')
     chk "CEPH.POOL.SIZING" INFO "$pools pool(s) detecte(s) (verifier size/min_size selon la tolerance de panne)"

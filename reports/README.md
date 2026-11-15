@@ -3,11 +3,11 @@
 Cible : VM VirtualBox locale `pve` (PVE 9.2.2, Debian 13, noyau 7.0.2-6-pve, ext4).
 
 Collecteurs (lecture seule, **160 controles** au total) :
-- `guest/audit-pve.sh` — controles PVE / CIS de base (67)
-- `guest/audit-cis13.sh` — controles CIS Debian 13 officiels, IDs du referentiel (19)
-- `guest/audit-anssi.sh` — controles ANSSI BP-028 (32)
-- `guest/audit-ceph.sh` — controles Ceph (11)
-- `guest/audit-communautaire.sh` — controles harbian-audit + BP-028 (31)
+- `guest/audit-pve.sh` - controles PVE / CIS de base (67)
+- `guest/audit-cis13.sh` - controles CIS Debian 13 officiels, IDs du referentiel (19)
+- `guest/audit-anssi.sh` - controles ANSSI BP-028 (32)
+- `guest/audit-ceph.sh` - controles Ceph (11)
+- `guest/audit-communautaire.sh` - controles harbian-audit + BP-028 (31)
 
 Tests fonctionnels : `guest/func-test-pve.sh` (21 tests Proxmox) et
 `guest/func-test-os.sh` (48 tests OS).
@@ -49,13 +49,13 @@ cluster local, et quelques controles non applicables a un hote Proxmox.
 
 ## Contenu de chaque rapport
 
-1. **Synthese** — KPI : PASS avant/apres, delta, regressions, tests fonctionnels
+1. **Synthese** - KPI : PASS avant/apres, delta, regressions, tests fonctionnels
    (ventiles Proxmox / OS)
-2. **Ameliorations** — controles passes de FAIL a PASS
-3. **Conformite par perimetre de guide** — CIS / ANSSI / Ceph / communautaire / PVE
-4. **Recapitulatif complet** — chaque controle avec Avant / Apres / Evolution / Detail
-5. **Tests fonctionnels - avant / apres durcissement** — 69 tests detailles
-6. **Tests fonctionnels - synthese par suite (non-regression)** — PASS/FAIL par suite
+2. **Ameliorations** - controles passes de FAIL a PASS
+3. **Conformite par perimetre de guide** - CIS / ANSSI / Ceph / communautaire / PVE
+4. **Recapitulatif complet** - chaque controle avec Avant / Apres / Evolution / Detail
+5. **Tests fonctionnels - avant / apres durcissement** - 69 tests detailles
+6. **Tests fonctionnels - synthese par suite (non-regression)** - PASS/FAIL par suite
 
 ## Tests fonctionnels (non-regression)
 

@@ -1,4 +1,4 @@
-﻿# CIS Debian 13 Level 1 + guide PVE 9 - Proxmox VE 9
+# CIS Debian 13 Level 1 + guide PVE 9 - Proxmox VE 9
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261112-141906`
 - **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-142224`

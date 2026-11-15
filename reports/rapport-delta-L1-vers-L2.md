@@ -1,4 +1,4 @@
-﻿# Delta CIS L1 vers L2 - Proxmox VE 9
+# Delta CIS L1 vers L2 - Proxmox VE 9
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-142224`
 - **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-142851`

@@ -1,4 +1,4 @@
-﻿# Validation croisee - Proxmox VE 9 (VM independante) - stack CIS L2 + ANSSI N3 + Ceph
+# Validation croisee - Proxmox VE 9 (VM independante) - stack CIS L2 + ANSSI N3 + Ceph
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261112-204042`
 - **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-205511`

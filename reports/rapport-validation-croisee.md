@@ -1,4 +1,4 @@
-﻿# Validation croisee - reproductibilite des resultats
+# Validation croisee - reproductibilite des resultats
 
 Le meme cycle de durcissement (CIS L1 + CIS L2 + ANSSI BP-028 N3 + Ceph) a ete
 execute sur plusieurs VM Proxmox VE 9 **independantes**, chacune departing de

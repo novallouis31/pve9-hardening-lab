@@ -1,4 +1,4 @@
-﻿# ANSSI BP-028 niveau 3 (renforce) - Proxmox VE 9
+# ANSSI BP-028 niveau 3 (renforce) - Proxmox VE 9
 
 - **Avant** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\baseline-20261112-133216`
 - **Apres** : `C:\Users\Louis\Documents\Projet par défaut\pve9-hardening-lab\artifacts\after-20261112-133901`
