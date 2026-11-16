@@ -2,7 +2,7 @@
 
 Ce rapport rend compte de la validation du **de-hardening** (retour a l'etat anterieur au durcissement) sur une instance Proxmox VE reelle. La chaine complete a ete executee sur la VM de laboratoire : audit de reference, durcissement, de-hardening par le client bash, audit de l'etat restaure, **montee de version PVE 8.4 -> 9**, re-durcissement et audit final.
 
-- **Genere le** : 2026-11-16 08:03
+- **Genere le** : 2026-11-16 08:25
 - **Perimetre** : 161 controles d'audit (Proxmox, CIS Debian 13, ANSSI BP-028, Ceph, communautaires), 72 tests fonctionnels
 
 ## 1. Synthese
@@ -89,87 +89,7 @@ Le script `guest/deharden-pve.sh` s'execute **sur le noeud** ; le client `script
 | Execution | re-vertit sysctl, AppArmor (*complain*), montages, base AIDE |
 | SSH | restaure en dernier, `sshd -t` avant tout rechargement |
 
-### Metriques relevees sur le noeud
-
-| Mesure | Valeur |
-|---|---|
-| Mode d'execution | application |
-| Fichiers restaures | 15 |
-| Fichiers supprimes | 21 |
-| Paquets desinstalles | 48 |
-| Sauvegarde de securite | `/root/deharden-safety-20261115_203651` |
-
-### Rapport produit par le de-hardening
-
-```
-# De-hardening Proxmox VE
-
-- **Date** : 2026-11-15T20:39:20+01:00
-- **Hote** : pve
-- **Mode** : application
-- **Journal** : `/var/log/deharden-20261115_203651.log`
-- **Sauvegarde de securite** : `/root/deharden-safety-20261115_203651`
-
-## Fichiers restaures
-
-| Fichier |
-|---|
-| `/etc/apparmor.d/busybox` |
-| `/etc/apt/apt.conf.d/20auto-upgrades` |
-| `/etc/crontab` |
-| `/etc/fstab` |
-| `/etc/issue.net` |
-| `/etc/login.defs` |
-| `/etc/pam.d/common-auth` |
-| `/etc/pam.d/common-password` |
-| `/etc/pam.d/login` |
-| `/etc/pam.d/passwd` |
-| `/etc/pam.d/sshd` |
-| `/etc/security/faillock.conf` |
-| `/etc/security/pwquality.conf` |
-| `/etc/ssh/sshd_config` |
-| `/root/.bashrc` |
-
-## Fichiers supprimes
-
-| Fichier |
-|---|
-| `/etc/profile.d/99-pve-hardening.sh` |
-| `/etc/ssh/sshd_config.d/00-pve-hardening.conf` |
-| `/etc/audit/rules.d/90-pve.rules` |
-| `/etc/cron.allow` |
-| `/etc/cron.daily/aide-check` |
-| `/etc/fail2ban/filter.d/pveproxy.conf` |
-| `/etc/fail2ban/jail.d/pve-web-http.conf` |
-| `/etc/fail2ban/jail.d/pve-web.conf` |
-| `/etc/modprobe.d/99-anssi-usb.conf` |
-| `/etc/modprobe.d/99-pve-hardening.conf` |
-| `/etc/profile.d/tmout.sh` |
-| `/etc/pve/firewall/cluster.fw` |
-| `/etc/pve/nodes/pve/firewall` |
-| `/etc/rsyslog.d/99-anssi-remote.conf` |
-| `/etc/security/limits.d/99-pve-hardening.conf` |
-| `/etc/sysctl.d/97-pve-hardening.conf` |
-| `/etc/sysctl.d/98-anssi.conf` |
-| `/etc/sysctl.d/99-pve-hardening.conf` |
-| `/etc/systemd/journald.conf.d/99-pve-hardening.conf` |
-| `/root/rollback-hardening.sh` |
-| `/etc/ceph/ceph.conf` |
-
-## Paquets
-
-Desinstalles : `aide aide-common apparmor-utils audispd-plugins auditd cracklib-runtime fail2ban fonts-lato javascript-common libauparse0t64 libcrack2 libestr0 libfastjson4 libjs-jquery liblognorm5 libpam-pwquality libpwquality-common libpwquality1 libruby libruby3.3 lsb-release net-tools python3-apparmor python3-distro-info python3-libapparmor python3-pyasyncore python3-pyinotify rake rkhunter rsyslog ruby ruby-csv ruby-did-you-mean ruby-net-telnet ruby-ruby2-keywords ruby-rubygems ruby-sdbm ruby-webrick ruby-xmlrpc ruby3.3 rubygems-integration sudo unattended-upgrades unhide unhide.rb unzip whois zip`
-
-## Verification
-
-| Service | Etat |
-|---|---|
-| `ssh` | active |
-| `pveproxy` | active |
-| `pvedaemon` | active |
-| `pvestatd` | active |
-| `pve-firewall` | active |
-```
+_Aucun rapport de de-hardening archive ne coincide avec l'artefact `dehardened-20261116-065955` : les metriques du noeud ne sont pas restituees ici (seul le cycle precedent les a conservees)._
 
 ## 5. Etapes de validation
 
@@ -235,6 +155,7 @@ Les depots doivent pointer sur **trixie** (Debian 13) : c'est la base de PVE 9. 
 | `scripts/deharden.sh` | client bash (IP + mot de passe root / cle SSH) |
 | `scripts/pve_hardening/deharden.py` | equivalent Python (`pve.py deharden`) |
 | `scripts/gen-validation-deharden.py` | generateur de ce rapport (artefacts) |
+| `guest/upgrade-pve8to9.sh` | montee de version PVE 8 -> 9 (trixie + `pve-no-subscription`) |
 
 ### Artefacts
 

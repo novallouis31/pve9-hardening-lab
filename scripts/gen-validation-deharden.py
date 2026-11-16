@@ -132,6 +132,29 @@ def artifact_date(directory: pathlib.Path) -> str:
     return match.group(1) if match else ""
 
 
+def stamp_date(path: pathlib.Path) -> str:
+    """Date (AAAAMMJJ) associee a un artefact (nom horodate, sinon mtime)."""
+    match = re.search(r"(\d{8})-\d{6}", path.name)
+    if match:
+        return match.group(1)
+    return datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y%m%d")
+
+
+def find_deharden_report(art: pathlib.Path, dehardened: pathlib.Path):
+    """Rapport de de-hardening du cycle courant, s'il a ete archive.
+
+    Plusieurs cycles s'enchainent dans le laboratoire : on ne garde que le
+    rapport dont la date coincide avec l'artefact `dehardened` du cycle.
+    """
+    wanted = stamp_date(dehardened)
+    candidates = sorted(art.glob("deharden-*.md"),
+                        key=lambda p: p.stat().st_mtime)
+    for path in candidates:
+        if stamp_date(path) == wanted and "dryrun" not in path.name.lower():
+            return path
+    return None
+
+
 def parse_deharden_report(path: pathlib.Path) -> dict:
     """Extrait les metriques du rapport Markdown produit sur le noeud."""
     metrics = {"mode": None, "safety": None, "restored": 0,
@@ -474,7 +497,13 @@ def main() -> int:
         print("Aucun artefact de validation dans {}".format(art), file=sys.stderr)
         return 1
 
-    metrics = parse_deharden_report(art / "deharden-applique.md")
+    metrics = {"mode": None, "safety": None, "restored": 0,
+               "deleted": 0, "packages": 0}
+    report_applied = None
+    if "dehardened" in audits:
+        report_applied = find_deharden_report(art, audits["dehardened"]["dir"])
+        if report_applied:
+            metrics = parse_deharden_report(report_applied)
 
     L: list = []
     L.append("# Validation du de-hardening Proxmox VE")
@@ -700,8 +729,14 @@ def main() -> int:
         L.append("| Sauvegarde de securite | `{}` |".format(metrics["safety"]))
         L.append("")
 
-    report_applied = art / "deharden-applique.md"
-    if report_applied.exists():
+    if report_applied is None and "dehardened" in audits:
+        L.append(
+            "_Aucun rapport de de-hardening archive ne coincide avec "
+            "l'artefact `{}` : les metriques du noeud ne sont pas restituees "
+            "ici (seul le cycle precedent les a conservees)._".format(
+                audits["dehardened"]["dir"].name))
+        L.append("")
+    elif report_applied is not None:
         L.append("### Rapport produit par le de-hardening")
         L.append("")
         L.append("```")
@@ -803,6 +838,7 @@ def main() -> int:
     L.append("| `scripts/deharden.sh` | client bash (IP + mot de passe root / cle SSH) |")
     L.append("| `scripts/pve_hardening/deharden.py` | equivalent Python (`pve.py deharden`) |")
     L.append("| `scripts/gen-validation-deharden.py` | generateur de ce rapport (artefacts) |")
+    L.append("| `guest/upgrade-pve8to9.sh` | montee de version PVE 8 -> 9 (trixie + `pve-no-subscription`) |")
     L.append("")
     L.append("### Artefacts")
     L.append("")
