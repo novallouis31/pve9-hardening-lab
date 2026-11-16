@@ -237,26 +237,38 @@ python3 scripts/pve.py run --phase apply --target ceph --level 1
 python3 scripts/pve.py run --phase verify --audit-extra anssi,ceph,cis13,communautaire --run-func
 ```
 
-Sur un noeud **PVE 8**, l'etape 4 est suivie de la montee de version :
+Sur un noeud **PVE 8**, l'etape 4 est suivie de la montee de version. Le script
+dedie `guest/upgrade-pve8to9.sh` applique la procedure officielle : bascule
+Debian **bookworm -> trixie**, depot PVE 9 `pve-no-subscription`, verification
+`pve8to9 --full` (si present) puis `apt dist-upgrade`.
 
 ```bash
-# 1. sauvegarde de reference
-tar czf /root/pre-upgrade-$(date +%Y%m%d).tar.gz /etc/pve /etc/network/interfaces
+# 1. copie du script sur le noeud (une fois le de-hardening termine)
+scp guest/upgrade-pve8to9.sh root@<ip>:/root/
 
-# 2. bascule des depots sur PVE 9 (pve-no-subscription)
-sed -i 's/^deb .*pve.*$/deb http:\/\/download.proxmox.com\/debian\/pve bookworm pve-no-subscription/' \
-    /etc/apt/sources.list.d/pve-install-repo.list 2>/dev/null || true
-apt-get update
+# 2. simulation puis application
+ssh root@<ip> 'bash /root/upgrade-pve8to9.sh --dry-run'
+ssh root@<ip> 'bash /root/upgrade-pve8to9.sh'
 
-# 3. verification officielle avant la montee de version
-pve8to9 --full
-
-# 4. montee de version
-apt-get dist-upgrade -y
-reboot
+# 3. arret puis demarrage a froid (nouveau noyau)
+VBoxManage controlvm <vm> acpipowerbutton
+VBoxManage startvm <vm> --type headless
 ```
 
+Le script sauvegarde `/etc/pve`, `/etc/apt`, le reseau et `grub` dans
+`/root/pre-upgrade-<ts>.tar.gz`, desactive les depots enterprise et ecrit
+`/etc/apt/sources.list.d/pve9-no-subscription.list` (trixie). Il ne redemarre
+pas : l'operateur valide `pveversion -v` puis re-durcit (etape 6).
+
 Apres redemarrage, verifier `pveversion` puis re-durcir (etape 6).
+
+> **Particularite du lab VirtualBox.** Le noyau PVE 8 (6.8) se bloque au
+> demarrage pendant le benchmark `raid6_pq` (module `dm-raid`). Le contournement
+> est `modprobe.blacklist=dm-raid,raid6_pq` dans `GRUB_CMDLINE_LINUX_DEFAULT`
+> (`/etc/default/grub`), complete par `/etc/modprobe.d/blacklist-dm-raid.conf`.
+> Le noyau PVE 9 (7.x) demarre sans ce blocage ; la ligne reste inoffensive.
+> Les redemarrages de la VM doivent etre faits **a froid** (arret puis
+> demarrage) : un reboot initie par le guest reste bloque dans ce lab.
 
 Le rapport dedie est `reports/rapport-validation-deharden.md` (et son PDF),
 regenere depuis les artefacts :

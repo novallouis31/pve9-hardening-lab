@@ -1,34 +1,36 @@
 # Validation du de-hardening Proxmox VE
 
-Ce rapport rend compte de la validation du **de-hardening** (retour a l'etat anterieur au durcissement) sur une instance Proxmox VE reelle. La chaine complete a ete executee sur la VM de laboratoire : audit de reference, durcissement, de-hardening par le client bash, audit de l'etat restaure, re-durcissement et audit final.
+Ce rapport rend compte de la validation du **de-hardening** (retour a l'etat anterieur au durcissement) sur une instance Proxmox VE reelle. La chaine complete a ete executee sur la VM de laboratoire : audit de reference, durcissement, de-hardening par le client bash, audit de l'etat restaure, **montee de version PVE 8.4 -> 9**, re-durcissement et audit final.
 
-- **Genere le** : 2026-11-15 21:57
+- **Genere le** : 2026-11-16 08:03
 - **Perimetre** : 161 controles d'audit (Proxmox, CIS Debian 13, ANSSI BP-028, Ceph, communautaires), 72 tests fonctionnels
 
 ## 1. Synthese
 
 | Etape | Artefacts | PASS | FAIL | NA | INFO | Conformite |
 |---|---|---:|---:|---:|---:|---:|
-| Baseline - PVE 9.2.2 pristine (avant durcissement) | `baseline-20261115-202420` | 68 | 72 | 11 | 10 | 48.6 % |
-| Apres durcissement (CIS L2 + ANSSI N3 + Ceph) | `hardened-20261115-203603` | 146 | 0 | 8 | 7 | 100 % |
-| Apres de-hardening | `dehardened-20261115-203944` | 71 | 69 | 11 | 10 | 50.7 % |
-| Apres re-durcissement | `rehardened-20261115-215523` | 146 | 0 | 8 | 7 | 100 % |
+| Baseline - avant durcissement - PVE 8.4.0 / noyau 6.8.12-9-pve / Debian GNU/Linux 12 (bookworm) | `baseline-20261116-065126` | 68 | 72 | 11 | 10 | 48.6 % |
+| Apres durcissement (CIS L2 + ANSSI N3 + Ceph) - PVE 8.4.0 / noyau 6.8.12-9-pve / Debian GNU/Linux 12 (bookworm) | `hardened-20261116-065511` | 146 | 0 | 8 | 7 | 100 % |
+| Apres de-hardening - PVE 8.4.0 / noyau 6.8.12-9-pve / Debian GNU/Linux 12 (bookworm) | `dehardened-20261116-065955` | 69 | 71 | 11 | 10 | 49.3 % |
+| Apres re-durcissement - PVE 9.2.0 / noyau 7.0.14-29-pve / Debian GNU/Linux 13 (trixie) | `rehardened-20261116-080045` | 146 | 0 | 8 | 7 | 100 % |
 
 ### Tests fonctionnels (non-regression Proxmox + OS)
 
 | Etape | Artefacts | Tests | PASS | FAIL | NA |
 |---|---|---:|---:|---:|---:|
-| Baseline - PVE 9.2.2 pristine | `func-baseline-20261115-202421` | 72 | 63 | 0 | 9 |
-| Apres durcissement | `func-hardened-20261115-203604` | 72 | 71 | 0 | 1 |
-| Apres de-hardening | `func-dehardened-20261115-203944` | 72 | 63 | 0 | 9 |
-| Apres re-durcissement | `func-rehardened-20261115-215524` | 72 | 71 | 0 | 1 |
+| Baseline - avant durcissement (cycle precedent, noeud de reference PVE 9) | `func-baseline-20261115-202421` | 72 | 63 | 0 | 9 |
+| Apres durcissement | `func-hardened-20261116-065512` | 72 | 70 | 0 | 2 |
+| Apres de-hardening | `func-dehardened-20261116-065957` | 72 | 62 | 0 | 10 |
+| Apres re-durcissement | `func-rehardened-20261116-080046` | 72 | 71 | 0 | 1 |
 
 ## 2. Retour a l'etat d'origine (resultat principal)
 
-La baseline est l'etat **avant tout durcissement** (instantane VirtualBox `pristine`). Apres le de-hardening, 158/161 controles retrouvent exactement leur statut d'origine.
+La baseline est l'etat **avant tout durcissement** (instantane VirtualBox de la VM de laboratoire). Apres le de-hardening, 156/161 controles retrouvent exactement leur statut d'origine.
 
 | Controle | Baseline | Apres de-hardening | Famille |
 |---|---|---|---|
+| `ANS.APPARMOR.ENFORCE` | PASS | FAIL | Etat AppArmor |
+| `OS.APPARMOR.ENFORCE` | PASS | FAIL | Etat AppArmor |
 | `ANS.CTRLALTDEL` | FAIL | PASS | Etats de services |
 | `COMM.CTRLALTDEL` | FAIL | PASS | Etats de services |
 | `ANS.KERNEL.BPF` | FAIL | PASS | Valeurs sysctl appliquees a chaud |
@@ -37,21 +39,32 @@ La baseline est l'etat **avant tout durcissement** (instantane VirtualBox `prist
 
 Les ecarts residuels proviennent de l'**etat d'execution** (valeurs appliquees a chaud, services, montages) et non de l'**etat fichier**. Le de-hardening restaure les fichiers, les permissions, les services, les depots et les paquets ; les valeurs deja appliquees au noyau, elles, ne sont definitivement levees qu'au redemarrage.
 
+- **Etat AppArmor** (`ANS.APPARMOR.ENFORCE`, `OS.APPARMOR.ENFORCE`) : le service est en mode *enforce* pendant le durcissement ; le de-hardening repasse les profils en *complain* et redemarre le service, mais le controle peut s'executer avant la fin du rechargement.
 - **Etats de services** (`ANS.CTRLALTDEL`, `COMM.CTRLALTDEL`) : services reactives ou desactives par le de-hardening ; un controle peut encore observer l'etat precedent si le service redemarre apres l'audit.
 - **Valeurs sysctl appliquees a chaud** (`ANS.KERNEL.BPF`) : le durcissement ecrit des fichiers dans `/etc/sysctl.d` **et** applique les valeurs immediatement (`sysctl -w`). Le de-hardening supprime les fichiers et retablit les valeurs par defaut, mais certains controles portent sur des noeuds (`net.ipv6.conf.*`, `bpf_jit_harden`) dont la valeur n'est reinitialisee qu'au redemarrage.
 
 Ces ecarts ne bloquent pas une montee de version : apres le de-hardening, l'acces SSH, les services Proxmox, le gestionnaire de paquets et les tests fonctionnels sont operationnels (voir les sections 2 et 3).
 
-- Conformite notee : **48.6 %** a la baseline, **50.7 %** apres de-hardening (les statuts `NA` et `INFO` ne sont pas notes).
+- Conformite notee : **48.6 %** a la baseline, **49.3 %** apres de-hardening (les statuts `NA` et `INFO` ne sont pas notes).
 
 ### Non-regression fonctionnelle
 
-| Test | Baseline | Apres de-hardening | Regression |
-|---|---|---|---|
-| `OS.FS.OPTIONS._dev_shm` | PASS | WARN | oui |
-| `OS.NET.DNS` | WARN | PASS | non |
+La suite fonctionnelle n'a pas ete jouee sur la baseline de ce cycle : elle l'a ete sur le noeud de reference PVE 9 du cycle precedent (`func-baseline-20261115-202421`), ce qui interdit une comparaison directe. La reference retenue est donc l'etat **durci de ce cycle** (`func-hardened-20261116-065512`) : les deux etats sont mesurees sur le meme systeme PVE 8.4.
 
-Regressions introduites par la chaine : **1**. Les autres differences existent deja dans la baseline (environnement de laboratoire sans licence, sans cluster).
+8 test(s) changent de statut ; **aucun** ne passe a `FAIL` : ce sont des mesures de durcissement levees par le de-hardening (options `tmpfs`, services ajoutes), pas des fonctionnalites perdues.
+
+| Test | Apres durcissement | Apres de-hardening | Echec introduit |
+|---|---|---|---|
+| `OS.FS.OPTIONS._dev_shm` | PASS | WARN | non |
+| `OS.FS.OPTIONS._tmp` | PASS | WARN | non |
+| `OS.FS.OPTIONS._var_tmp` | PASS | WARN | non |
+| `OS.LOG.AUDITD` | PASS | NA | non |
+| `OS.LOG.RSYSLOG` | PASS | NA | non |
+| `OS.SUDO.WORK` | PASS | NA | non |
+| `OS.SYSCTL.NET_IPV4_CONF_ALL_ACCEPT_REDIRECTS` | PASS | WARN | non |
+| `OS.USER.NONROOT` | PASS | WARN | non |
+
+Tests en echec introduits par la chaine : **0**.
 
 ## 3. Re-durcissement : la reference est retrouvee
 
@@ -160,20 +173,23 @@ Desinstalles : `aide aide-common apparmor-utils audispd-plugins auditd cracklib-
 
 ## 5. Etapes de validation
 
-1. **Preparation** - la VM `proxmox` est restauree sur l'instantane `pristine` (Proxmox VE 9.2.2, Debian 13, aucun durcissement) et les sessions de sauvegarde heritees sont supprimees.
-2. **Baseline** - audit des 5 perimetres (Proxmox, CIS Debian 13, ANSSI BP-028, Ceph, communautaires) et suite de tests fonctionnels Proxmox + OS.
+La chaine a ete deroulee sur un noeud PVE 8.4 neuf (VM `proxmox3`, installation automatisee), puis le noeud a ete migre en PVE 9 :
+
+1. **Preparation** - la VM est restauree sur un instantane propre (aucun durcissement, aucun historique de sauvegarde).
+2. **Baseline** - audit des 5 perimetres (Proxmox, CIS, ANSSI BP-028, Ceph, communautaires) et suite de tests fonctionnels Proxmox + OS.
 3. **Durcissement** - `apply-homesec-core.sh` (CIS L1 puis L2), `apply-anssi.sh` (niveau 3) et `apply-ceph.sh`, puis audit de reference et tests fonctionnels.
 4. **De-hardening** - client bash en simulation (`--dry-run`) puis en application :
 
 ```bash
-bash scripts/deharden.sh --host 127.0.0.1 --port 2222 \
+bash scripts/deharden.sh --host 127.0.0.1 --port 2224 \
      --key ~/.ssh/id_ed25519 --dry-run
-bash scripts/deharden.sh --host 127.0.0.1 --port 2222 \
+bash scripts/deharden.sh --host 127.0.0.1 --port 2224 \
      --key ~/.ssh/id_ed25519
 ```
 
 5. **Verification** - audit de l'etat restaure et tests fonctionnels : les statuts sont compares a la baseline.
-6. **Re-durcissement** - re-application des trois durcisseurs puis audit final : les statuts sont compares a la reference durcie.
+6. **Montee de version** - `guest/upgrade-pve8to9.sh` bascule Debian bookworm -> trixie et le depot PVE 8 enterprise -> PVE 9 `pve-no-subscription`, puis execute `apt dist-upgrade`.
+7. **Re-durcissement** - re-application des trois durcisseurs sur le noeud PVE 9 puis audit final : les statuts sont compares a la reference durcie.
 
 ## 6. Procedure de montee de version d'un noeud durci
 
@@ -196,13 +212,19 @@ bash scripts/deharden.sh --host <ip> --password 'secret'
 # 3. controle : la conformite revient a celle de la baseline
 python3 scripts/pve.py run --phase verify --ssh-host <ip> \
     --audit-extra anssi,ceph,cis13,communautaire
-# 4. monter l'ISO de la nouvelle version et redemarrer
+# 4. montee de version PVE 8 -> 9 (trixie + pve-no-subscription)
+scp guest/upgrade-pve8to9.sh root@<ip>:/root/
+ssh root@<ip> 'bash /root/upgrade-pve8to9.sh --dry-run'
+ssh root@<ip> 'bash /root/upgrade-pve8to9.sh'
+#    puis arret et demarrage a froid de la VM (nouveau noyau)
 # 5. re-durcir
 python3 scripts/pve.py run --phase apply --target core --level 2 --ssh-host <ip>
 python3 scripts/pve.py run --phase apply --target anssi --level 3 --ssh-host <ip>
 # 6. non-regression
 python3 scripts/pve.py run --phase verify --ssh-host <ip> --run-func
 ```
+
+Les depots doivent pointer sur **trixie** (Debian 13) : c'est la base de PVE 9. Conserver `bookworm` laisse le noeud a moitie migre (`pve-manager` 9 avec les bibliotheques Debian 12).
 
 ## 7. Annexes
 
@@ -218,12 +240,12 @@ python3 scripts/pve.py run --phase verify --ssh-host <ip> --run-func
 
 | Prefixe | Contenu |
 |---|---|
-| `baseline-20261115-202420` | Baseline - PVE 9.2.2 pristine (avant durcissement) |
-| `hardened-20261115-203603` | Apres durcissement (CIS L2 + ANSSI N3 + Ceph) |
-| `dehardened-20261115-203944` | Apres de-hardening |
-| `rehardened-20261115-215523` | Apres re-durcissement |
-| `func-baseline-20261115-202421` | Baseline - PVE 9.2.2 pristine |
-| `func-hardened-20261115-203604` | Apres durcissement |
-| `func-dehardened-20261115-203944` | Apres de-hardening |
-| `func-rehardened-20261115-215524` | Apres re-durcissement |
+| `baseline-20261116-065126` | Baseline - avant durcissement - PVE 8.4.0 / noyau 6.8.12-9-pve / Debian GNU/Linux 12 (bookworm) |
+| `hardened-20261116-065511` | Apres durcissement (CIS L2 + ANSSI N3 + Ceph) - PVE 8.4.0 / noyau 6.8.12-9-pve / Debian GNU/Linux 12 (bookworm) |
+| `dehardened-20261116-065955` | Apres de-hardening - PVE 8.4.0 / noyau 6.8.12-9-pve / Debian GNU/Linux 12 (bookworm) |
+| `rehardened-20261116-080045` | Apres re-durcissement - PVE 9.2.0 / noyau 7.0.14-29-pve / Debian GNU/Linux 13 (trixie) |
+| `func-baseline-20261115-202421` | Baseline - avant durcissement |
+| `func-hardened-20261116-065512` | Apres durcissement |
+| `func-dehardened-20261116-065957` | Apres de-hardening |
+| `func-rehardened-20261116-080046` | Apres re-durcissement |
 

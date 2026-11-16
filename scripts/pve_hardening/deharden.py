@@ -91,7 +91,7 @@ def deharden(options: DehardenOptions) -> int:
         for line in (res.out or "").splitlines():
             if line.strip():
                 console.write("  " + line.strip())
-        if "/etc/pve" not in (ssh.exec("test -d /etc/pve && echo PROXMOX_OK").out or ""):
+        if "PROXMOX_OK" not in (ssh.exec("test -d /etc/pve && echo PROXMOX_OK").out or ""):
             console.error("  la cible ne semble pas etre un noeud Proxmox (/etc/pve absent).")
             console.dim("  le de-hardening est specifique a Proxmox VE : abandon.")
             return 1
